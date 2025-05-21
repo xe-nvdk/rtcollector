@@ -1,13 +1,13 @@
 # rtcollector
 
 > A modular, RedisTimeSeries-native observability agent.  
-> Designed for developers, tinkerers, and infrastructure teams who want full control over metrics collection — without the bloat.
+> Designed for developers, tinkerers, and infrastructure teams who want full control over metrics collection, without the bloat.
 
 ---
 
 ## 🧠 What is `rtcollector`?
 
-`rtcollector` is a lightweight, plugin-based agent for collecting system and application metrics — and pushing them to [RedisTimeSeries](https://redis.io/docs/interact/data-types/timeseries/).
+`rtcollector` is a lightweight, plugin-based agent for collecting system and application metrics, and pushing them to [RedisTimeSeries](https://redis.io/timeseries/).
 
 It works like [Telegraf](https://www.influxdata.com/time-series-platform/telegraf/), but is designed specifically for the Redis Stack ecosystem.
 
@@ -21,6 +21,7 @@ Because most modern observability agents:
 - Are too bloated or overkill for smaller projects or edge deployments
 - Assume you're using Prometheus, InfluxDB, or Elastic
 - Lack good support for RedisTimeSeries as a first-class output
+- Why not?
 
 `rtcollector` was born out of the need for:
 
@@ -36,7 +37,7 @@ Because most modern observability agents:
 - ⏱️ Collect metrics at configurable intervals
 - 📦 Modular input plugins (Linux CPU, Mem, Disk, etc.)
 - 🚀 Push metrics to RedisTimeSeries (via `TS.ADD`)
-- ⚙️ Fully YAML-configurable — no code changes needed to enable/disable plugins
+- ⚙️ Fully YAML-configurable. No code changes needed to enable/disable plugins
 - 📚 Built with Python and easy to extend
 
 ---
@@ -60,7 +61,7 @@ Because most modern observability agents:
 
 | Plugin            | Notes |
 |-------------------|-------|
-| `redistimeseries` | ✅ Default output — pipelines metrics using `TS.ADD` |
+| `redistimeseries` | ✅ Default output, pipelines metrics using `TS.ADD` |
 | (Planned) `stdout`| for testing/debugging locally |
 | (Planned) `clickhouse` | push metrics to cold storage / analytics engine |
 | (Planned) `mqtt` / `http_post` | to integrate with IoT or alerting systems |
@@ -108,7 +109,7 @@ outputs:
 
 ## ❤️ Contributing
 
-This project is just getting started — contributions, ideas, and PRs are more than welcome!
+This project is just getting started, contributions, ideas, and PRs are more than welcome!
 
 To get started:
 
@@ -125,4 +126,4 @@ To get started:
 
 This project is licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](https://www.gnu.org/licenses/agpl-3.0.html).
 
-You are free to use, modify, and distribute this code — as long as you open source any changes and make your source code available if you deploy a modified version as a network service.
+You are free to use, modify, and distribute this code , as long as you open source any changes and make your source code available if you deploy a modified version as a network service.

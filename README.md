@@ -1,3 +1,6 @@
+![rtcollector](https://github.com/user-attachments/assets/ff1ffbd4-4df1-4fd1-a540-5065d4a552f3)
+
+
 # rtcollector
 
 > A modular, RedisTimeSeries-native observability agent.  

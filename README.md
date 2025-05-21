@@ -1,4 +1,4 @@
-![rtcollector](https://github.com/user-attachments/assets/ff1ffbd4-4df1-4fd1-a540-5065d4a552f3)
+![rtcollector](https://github.com/user-attachments/assets/89bd14c2-62e0-4e52-aa3f-da44a6012d5a)
 
 
 # rtcollector

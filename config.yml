@@ -1,0 +1,20 @@
+interval: 10
+
+inputs:
+  - linux_cpu
+  - linux_mem
+  - linux_disk
+  - linux_io
+  - linux_net
+  - macos_cpu
+  - macos_mem
+  - macos_disk
+  - macos_io
+  - macos_net
+
+outputs:
+  - redistimeseries:
+      host: atila.taild1b8e.ts.net
+      port: 6379
+      retention: 86400000  # 1 day in milliseconds
+      hostname: ''

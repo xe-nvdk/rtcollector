@@ -42,21 +42,30 @@ Because most modern observability agents:
 - 🚀 Push metrics to RedisTimeSeries (via `TS.ADD`)
 - ⚙️ Fully YAML-configurable. No code changes needed to enable/disable plugins
 - 📚 Built with Python and easy to extend
+- 💻 Support for MacOS and Linux
+- 🏷️ Label-based key creation with per-host and per-core tags
+- 🐞 Debug logging and one-shot execution support
 
 ---
 
 ## 🔌 Inputs (WIP)
 
-| Plugin        | Status  | Notes |
-|---------------|---------|-------|
-| `linux_cpu`   | ✅      | per-core and total CPU usage  
-| `linux_mem`   | 🛠️      | free/used/available RAM  
-| `linux_disk`  | 🛠️      | disk usage by mount  
-| `linux_net`   | 🛠️      | bytes in/out, packet errors  
-| `docker_stats`| 🧪      | container-level CPU, mem, net  
-| `mysql`       | 🧪      | basic server stats via `SHOW STATUS`  
-| `postgres`    | 🧪      | connections, xact commits  
-| `redis`       | 🧪      | `INFO` command + optional latency info  
+| Plugin         | Status | Notes |
+|----------------|--------|-------|
+| `linux_cpu`    | ✅     | per-core and total CPU usage  
+| `linux_mem`    | ✅     | free/used/available RAM  
+| `linux_disk`   | ✅     | disk usage by mount  
+| `linux_net`    | ✅     | bytes in/out, packet errors  
+| `linux_io`     | ✅     | read/write bytes and ops  
+| `macos_cpu`    | ✅     | per-core and total CPU usage  
+| `macos_mem`    | ✅     | memory usage via `vm_stat`  
+| `macos_disk`   | ✅     | disk usage via `df`  
+| `macos_io`     | ✅     | I/O stats via `iostat`  
+| `macos_net`    | ✅     | net stats via `netstat`  
+| `docker_stats` | 🧪     | container-level CPU, mem, net  
+| `mysql`        | 🧪     | basic server stats via `SHOW STATUS`  
+| `postgres`     | 🧪     | connections, xact commits  
+| `redis`        | 🧪     | `INFO` command + optional latency info  
 
 ---
 
@@ -64,7 +73,7 @@ Because most modern observability agents:
 
 | Plugin            | Notes |
 |-------------------|-------|
-| `redistimeseries` | ✅ Default output, pipelines metrics using `TS.ADD` |
+| `redistimeseries` | ✅ Default and most stable output; supports automatic key creation with retention policies and labels |
 | (Planned) `stdout`| for testing/debugging locally |
 | (Planned) `clickhouse` | push metrics to cold storage / analytics engine |
 | (Planned) `mqtt` / `http_post` | to integrate with IoT or alerting systems |
@@ -75,9 +84,11 @@ Because most modern observability agents:
 
 - [x] Plugin-based architecture
 - [x] YAML-based config loader
-- [ ] Add default input suite (system, docker, databases)
+- [x] Add default input suite (system, docker, databases)
+- [x] Add CLI (`rtcollector run --config config.yaml`)
+- [x] Debug and once mode
+- [x] macOS support
 - [ ] Add plugin schema validation + logging
-- [ ] Add CLI (`rtcollector run --config config.yaml`)
 - [ ] RedisJSON/RediSearch support for logs
 - [ ] Redis Streams support for realtime events
 - [ ] Alerting module (thresholds, filters, webhooks)
@@ -89,6 +100,10 @@ Because most modern observability agents:
 
 ```yaml
 interval: 5
+hostname: atila
+retention: 86400000
+debug: true
+once: false
 
 inputs:
   - linux_cpu

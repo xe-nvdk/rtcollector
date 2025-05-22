@@ -52,3 +52,6 @@ MANIFEST
 # System-specific
 .DS_Store
 Thumbs.db
+
+lib/
+bin/

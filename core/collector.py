@@ -13,12 +13,20 @@ class Collector:
             print(f"[{datetime.now().isoformat()}] [Collector] Collecting metrics...")
             all_metrics = []
             for input_func in self.inputs:
+                plugin_module = getattr(input_func, "__module__", "unknown")
+                plugin_name = plugin_module.split('.')[-1]
+
+                if plugin_name == "__main__" or plugin_name.startswith("<"):
+                    plugin_name = getattr(input_func, "__name__", "anonymous")
+                start = time.time()
                 try:
                     metrics = input_func()
+                    duration = time.time() - start
                     all_metrics.extend(metrics)
-                    print(f"[{datetime.now().isoformat()}] [Collector] Collected {len(metrics)} metrics from {input_func.__module__}")
+                    slow_flag = " ⚠️" if duration > 1.0 else ""
+                    print(f"[{datetime.now().isoformat()}] [{plugin_name}] Collected {len(metrics)} metrics in {duration:.2f}s{slow_flag}")
                 except Exception as e:
-                    print(f"[{datetime.now().isoformat()}] [Collector] Error in input plugin: {e}")
+                    print(f"[{datetime.now().isoformat()}] [Collector] Error in input plugin '{plugin_name}': {e}")
             for output in self.outputs:
                 try:
                     output.write(all_metrics)

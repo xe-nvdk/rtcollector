@@ -24,16 +24,32 @@ def main():
     inputs = []
     seen_plugins = set()
     for name in config["inputs"]:
-        plugin_name = name
+        if isinstance(name, dict):
+            plugin_name = list(name.keys())[0]
+            plugin_config = name[plugin_name]
+        else:
+            plugin_name = name
+            plugin_config = {}
+
         # If on macOS, try to map linux_* to macos_* if available
-        if system == "darwin" and name.startswith("linux_"):
-            plugin_name = name.replace("linux_", "macos_")
+        if system == "darwin" and plugin_name.startswith("linux_"):
+            plugin_name = plugin_name.replace("linux_", "macos_")
+
         if plugin_name in seen_plugins:
             continue
         seen_plugins.add(plugin_name)
+
         try:
             mod = importlib.import_module(f"inputs.{plugin_name}")
-            inputs.append(mod.collect)
+            if plugin_config:
+                def make_collector(mod, plugin_config):
+                    def collect_with_config():
+                        return mod.collect(plugin_config)
+                    collect_with_config.__name__ = mod.__name__.split('.')[-1]
+                    return collect_with_config
+                inputs.append(make_collector(mod, plugin_config))
+            else:
+                inputs.append(mod.collect)
         except ModuleNotFoundError as e:
             print(f"[Collector] Skipping unavailable plugin '{plugin_name}': {e}")
 

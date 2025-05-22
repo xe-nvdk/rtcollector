@@ -34,7 +34,7 @@ class Redistimeseries:
                         print(f"[Redistimeseries] TS.CREATE failed: {e}")
                 self.created_keys.add(key)
 
-            args = ["TS.ADD", key, m.timestamp, m.value]
+            args = ["TS.ADD", key, int(m.timestamp), float(m.value)]
             pipe.execute_command(*args)
 
         try:

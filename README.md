@@ -95,9 +95,15 @@ Because most modern observability agents:
 - [x] Debug and once mode
 - [x] macOS support
 - [x] Docker Support
-- [ ] Add plugin schema validation + logging
 - [x] RedisJSON/RediSearch support for logs
 - [ ] Redis Streams support for realtime events
+- [ ] PostgreSQL input plugin (expanded)
+- [ ] HTTP/HTTPS check plugin for health monitoring
+- [ ] Nginx / Apache metrics via status endpoint
+- [ ] SNMP input plugin for networking devices
+- [ ] JVM metrics via Jolokia
+- [ ] Filebeat-compatible input for ingesting logs
+- [ ] MQTT input plugin for IoT message ingestion
 - [ ] Grafana dashboard templates for RedisTimeSeries
 
 ---

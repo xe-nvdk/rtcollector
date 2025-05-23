@@ -46,6 +46,7 @@ Because most modern observability agents:
 - 🏷️ Label-based key creation with per-host and per-core tags
 - 🐞 Debug logging and one-shot execution support
 - 🐳 Docker metrics via container stats and engine info
+- 📥 Receive and index logs via Syslog input (RFC5424/RFC3164) using RedisSearch
 - 🕒 Per-plugin timing with slow detection and warning indicators
 
 ---

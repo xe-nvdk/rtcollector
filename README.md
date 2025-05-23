@@ -65,6 +65,7 @@ Because most modern observability agents:
 | `macos_io`     | ✅     | I/O stats via `iostat`  
 | `macos_net`    | ✅     | net stats via `netstat`  
 | `docker_stats` | ✅     | container CPU, memory, and network stats; Docker Swarm toggle via config; added logging improvements and plugin execution duration tracking  
+| `syslog`       | ✅     | receive and parse RFC5424/RFC3164 logs over TCP/UDP; supports JSON output via RedisSearch |
 | `mysql`        | 🧪     | basic server stats via `SHOW STATUS`  
 | `postgres`     | 🧪     | connections, xact commits  
 | `redis`        | 🧪     | `INFO` command + optional latency info  
@@ -76,6 +77,7 @@ Because most modern observability agents:
 | Plugin            | Notes |
 |-------------------|-------|
 | `redistimeseries` | ✅ Default and most stable output; supports automatic key creation with retention policies and labels; supports dynamic hostname tagging and duplicate policy handling |
+| `redissearch`     | ✅ Used for structured log ingestion (e.g., syslog); stores JSON documents in Redis and indexes fields like severity, appname, and message for querying via RediSearch |
 | (Planned) `stdout`| for testing/debugging locally |
 | (Planned) `clickhouse` | push metrics to cold storage / analytics engine |
 | (Planned) `mqtt` / `http_post` | to integrate with IoT or alerting systems |
@@ -92,7 +94,7 @@ Because most modern observability agents:
 - [x] macOS support
 - [x] Docker Support
 - [ ] Add plugin schema validation + logging
-- [ ] RedisJSON/RediSearch support for logs
+- [x] RedisJSON/RediSearch support for logs
 - [ ] Redis Streams support for realtime events
 - [ ] Grafana dashboard templates for RedisTimeSeries
 
@@ -113,11 +115,32 @@ inputs:
   - docker:
       endpoint: "unix:///var/run/docker.sock"
       gather_services: false
+  - syslog:
+        server: "tcp://127.0.0.1:5514"
+        tls_cert: ""
+        tls_key: ""
+        socket_mode: ""
+        max_connections: 0
+        read_timeout: 0
+        read_buffer_size: "64KiB"
+        keep_alive_period: "5m"
+        content_encoding: "identity"
+        max_decompression_size: "500MB"
+        framing: "octet-counting"
+        trailer: "LF"
+        best_effort: false
+        syslog_standard: "RFC5424"
+        sdparam_separator: "_"
 
 outputs:
   - redistimeseries:
       host: localhost
       port: 6379
+  - redissearch:
+      host: localhost
+      port: 6379
+      index: "logs_idx"
+      key_prefix: "log:"
 ```
 ---
 

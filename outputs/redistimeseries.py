@@ -3,6 +3,8 @@ import socket
 from core.metric import Metric
 
 class Redistimeseries:
+    supports_logs = False
+    supports_metrics = True
     def __init__(self, host="localhost", port=6379, db=0, retention=0, hostname=None):
         self.r = redis.Redis(host=host, port=port, db=db)
         self.retention = retention

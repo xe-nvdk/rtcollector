@@ -27,8 +27,29 @@ inputs:
       docker_label_exclude: []
       tag_env: ["JAVA_HOME", "HEAP_SIZE"]
       timeout: 5
+  - syslog:
+      server: "tcp://127.0.0.1:5514"
+      tls_cert: ""
+      tls_key: ""
+      socket_mode: ""
+      max_connections: 0
+      read_timeout: 0
+      read_buffer_size: "64KiB"
+      keep_alive_period: "5m"
+      content_encoding: "identity"
+      max_decompression_size: "500MB"
+      framing: "octet-counting"
+      trailer: "LF"
+      best_effort: false
+      syslog_standard: "RFC5424"
+      sdparam_separator: "_"
 
 outputs:
   - redistimeseries:
       host: atila.taild1b8e.ts.net
       port: 6379
+  - redissearch:
+      host: atila.taild1b8e.ts.net
+      port: 6379
+      index: "logs_idx"
+      key_prefix: "log:"

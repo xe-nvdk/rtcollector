@@ -1,11 +1,9 @@
 import socketserver
 import threading
-import socket
 import ssl
 import re
 from datetime import datetime
 
-from core.metric import Metric
 from utils.system import get_hostname
 
 syslog_collector_instance = None

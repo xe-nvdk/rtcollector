@@ -24,12 +24,11 @@ def main():
     for name in config["inputs"]:
         if isinstance(name, dict):
             plugin_name = list(name.keys())[0]
-            plugin_config = name[plugin_name]
+            plugin_config = config["inputs"][config["inputs"].index(name)][plugin_name]
         else:
             plugin_name = name
             plugin_config = {}
 
-        # If on macOS, try to map linux_* to macos_* if available
         if system == "darwin" and plugin_name.startswith("linux_"):
             plugin_name = plugin_name.replace("linux_", "macos_")
 

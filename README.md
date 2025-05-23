@@ -48,6 +48,7 @@ Because most modern observability agents:
 - 🐳 Docker metrics via container stats and engine info
 - 📥 Receive and index logs via Syslog input (RFC5424/RFC3164) using RedisSearch
 - 🕒 Per-plugin timing with slow detection and warning indicators
+- 🐬 Collect metrics from MariaDB servers using `SHOW GLOBAL STATUS`, configurable and with authentication support
 
 ---
 
@@ -67,9 +68,9 @@ Because most modern observability agents:
 | `macos_net`    | ✅     | net stats via `netstat`  
 | `docker_stats` | ✅     | container CPU, memory, and network stats; Docker Swarm toggle via config; added logging improvements and plugin execution duration tracking  
 | `syslog`       | ✅     | receive and parse RFC5424/RFC3164 logs over TCP/UDP; supports JSON output via RedisSearch |
-| `mysql`        | 🧪     | basic server stats via `SHOW STATUS`  
-| `postgres`     | 🧪     | connections, xact commits  
-| `redis`        | 🧪     | `INFO` command + optional latency info  
+| `mariadb`      | ✅     | collects server stats via `SHOW GLOBAL STATUS`; supports configurable metrics and basic auth  |
+| `postgres`     | 🧪     | connections, xact commits  |
+| `redis`        | ✅     | Collects server stats, memory usage, CPU, clients, persistence, replication, stats, keyspace, and latency via INFO; fully configurable metrics list |
 
 ---
 
@@ -132,6 +133,41 @@ inputs:
         best_effort: false
         syslog_standard: "RFC5424"
         sdparam_separator: "_"
+  - redis:
+      host: "localhost"
+      port: 6379
+      db: 0
+      metrics:
+        - used_memory
+        - total_system_memory
+        - connected_clients
+        - blocked_clients
+        - total_commands_processed
+        - expired_keys
+        - evicted_keys
+        - instantaneous_ops_per_sec
+        - keyspace_hits
+        - keyspace_misses
+        - used_cpu_sys
+        - used_cpu_user
+        - mem_fragmentation_ratio
+        - connected_slaves
+        - aof_enabled
+        - rdb_last_bgsave_status
+        - role
+        - uptime_in_seconds
+        - total_connections_received
+  - mariadb:
+      host: "localhost"
+      port: 3306
+      auth:
+        user: "monitor"
+        password: "yourpassword"
+      metrics:
+        - Threads_connected
+        - Connections
+        - Uptime
+        - Questions
 
 outputs:
   - redistimeseries:

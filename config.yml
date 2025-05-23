@@ -5,44 +5,59 @@ debug: true
 once: false
 
 inputs:
-  - linux_cpu
-  - linux_mem
-  - linux_disk
-  - linux_io
-  - linux_net
+  # - linux_cpu
+  # - linux_mem
+  # - linux_disk
+  # - linux_io
+  # - linux_net
   # - macos_cpu
   # - macos_mem
   # - macos_disk
   # - macos_io
   # - macos_net
-  - docker:
-      endpoint: "unix:///var/run/docker.sock"
-      gather_services: false
-      swarm_enabled: false
-      container_name_include: []
-      container_name_exclude: []
-      container_state_include: []
-      container_state_exclude: []
-      docker_label_include: []
-      docker_label_exclude: []
-      tag_env: ["JAVA_HOME", "HEAP_SIZE"]
-      timeout: 5
-  - syslog:
-      server: "tcp://127.0.0.1:5514"
-      tls_cert: ""
-      tls_key: ""
-      socket_mode: ""
-      max_connections: 0
-      read_timeout: 0
-      read_buffer_size: "64KiB"
-      keep_alive_period: "5m"
-      content_encoding: "identity"
-      max_decompression_size: "500MB"
-      framing: "octet-counting"
-      trailer: "LF"
-      best_effort: false
-      syslog_standard: "RFC5424"
-      sdparam_separator: "_"
+  # - docker:
+  #     endpoint: "unix:///var/run/docker.sock"
+  #     gather_services: false
+  #     swarm_enabled: false
+  #     container_name_include: []
+  #     container_name_exclude: []
+  #     container_state_include: []
+  #     container_state_exclude: []
+  #     docker_label_include: []
+  #     docker_label_exclude: []
+  #     tag_env: ["JAVA_HOME", "HEAP_SIZE"]
+  #     timeout: 5
+  # - syslog:
+  #     server: "tcp://127.0.0.1:5514"
+  #     tls_cert: ""
+  #     tls_key: ""
+  #     socket_mode: ""
+  #     max_connections: 0
+  #     read_timeout: 0
+  #     read_buffer_size: "64KiB"
+  #     keep_alive_period: "5m"
+  #     content_encoding: "identity"
+  #     max_decompression_size: "500MB"
+  #     framing: "octet-counting"
+  #     trailer: "LF"
+  #     best_effort: false
+  #     syslog_standard: "RFC5424"
+  #     sdparam_separator: "_"
+  - redis:
+      host: "127.0.0.1"
+      port: 6379
+      password: ""
+      db: 0
+  - mariadb:
+      host: "127.0.0.1"
+      port: 3306
+      user: "monitor"
+      password: "testpass"
+      metrics:
+        - Threads_connected
+        - Connections
+        - Uptime
+        - Questions
 
 outputs:
   - redistimeseries:

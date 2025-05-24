@@ -51,14 +51,9 @@ def collect():
     current = _read_proc_stat()
 
     if not _last_cpu_times:
-        print("[linux_cpu] Initial population of _last_cpu_times:")
-        print("Found CPU IDs:", list(current.keys()))
         _last_cpu_times = current
         time.sleep(0.1)
         return []
-
-    print("[linux_cpu] Existing _last_cpu_times keys:", list(_last_cpu_times.keys()))
-    print("[linux_cpu] Current CPU IDs:", list(current.keys()))
 
     for cpu_id in current:
         if cpu_id not in _last_cpu_times:

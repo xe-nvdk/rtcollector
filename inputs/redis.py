@@ -3,15 +3,12 @@ import redis
 import time
 
 def collect(config) -> tuple:
-    print(f"[redis] Debug: Raw config: {config}")
 
     # If config is a dict with a 'redis' key, use that as our config
     if isinstance(config, dict) and "redis" in config:
         redis_config = config["redis"]
     else:
         redis_config = config
-
-    print(f"[redis] Debug: Using config: {redis_config}")
 
     # Required configuration parameters
     host = redis_config.get("host")

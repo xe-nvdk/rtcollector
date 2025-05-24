@@ -49,6 +49,9 @@ Because most modern observability agents:
 - 📥 Receive and index logs via Syslog input (RFC5424/RFC3164) using RedisSearch
 - 🕒 Per-plugin timing with slow detection and warning indicators
 - 🐬 Collect metrics from MariaDB servers using `SHOW GLOBAL STATUS`, configurable and with authentication support
+- ⏳ Support for human-readable retention settings (e.g., `1d`, `12h`, `1y`) for RedisTimeSeries
+- 📦 Memory buffering for metrics and logs during Redis downtime with automatic flush and progress bar
+- 🌐 Optional SOCKS4 and SOCKS5 proxy support for Redis-based outputs, including authentication
 
 ---
 
@@ -111,9 +114,11 @@ Because most modern observability agents:
 ## 📦 Example `config.yaml`
 
 ```yaml
-interval: 5
-hostname: atila
-retention: 86400000
+interval: 10    # Collecting every ten seconds
+flush_interval: 60    # Flushing every minute
+max_buffer_size: 5000    # Maximum number of entries to buffer if Redis is unavailable
+warn_on_buffer: true
+hostname: ''
 debug: true
 once: false
 
@@ -179,12 +184,57 @@ outputs:
   - redistimeseries:
       host: localhost
       port: 6379
+      retention: 1y
   - redissearch:
       host: localhost
       port: 6379
       index: "logs_idx"
       key_prefix: "log:"
 ```
+---
+
+## 🧰 Configuration Notes
+
+### ⏱️ Collection and Flushing Intervals
+
+- `interval`: Defines how often input plugins are executed (in seconds). Each plugin will collect new metrics on this interval.
+- `flush_interval`: (optional) Defines how often buffered data is flushed to output plugins. If not set, it defaults to the same as `interval`.
+
+### 🧵 Buffering Behavior
+
+- If an output (e.g., Redis) becomes unavailable, `rtcollector` will buffer collected metrics and logs in memory.
+- The buffer is size-limited via `max_buffer_size` (default: 5000).
+- Once the output is available again, buffered data is flushed in the next cycle.
+- Buffered metrics and logs are shown in the debug output with a progress bar.
+
+### 🌐 Proxy Support
+
+- Redis outputs support SOCKS5 and SOCKS4 proxying, useful in restricted networks or jump-box scenarios.
+- Add a `socks5_proxy` or `socks4_proxy` field under any Redis-based output:
+
+  ```yaml
+  outputs:
+    - redissearch:
+        host: redis.example.com
+        port: 6379
+        index: "logs_idx"
+        key_prefix: "log:"
+        # Optional proxy with authentication
+        # socks5_proxy: "socks5://user:pass@127.0.0.1:1080"
+  ```
+
+- Proxy support is optional and applied only if configured.
+
+### 📅 Retention Policy
+
+- You can configure the data retention period in a more human-readable format.
+- The `retention` field in your config can now use:
+  - `"7d"` for 7 days
+  - `"12h"` for 12 hours
+  - `"1y"` for 1 year
+- These values are automatically converted into milliseconds for RedisTimeSeries.
+- You can still use raw millisecond values if needed (e.g., `retention: 86400000`).
+
 ---
 
 ## 👥 Who is this for?

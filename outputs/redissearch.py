@@ -96,6 +96,7 @@ class RedisSearch:
                 # print(f"[RedisSearch] Written log entry to key: {redis_key}")
             except Exception as e:
                 print(f"[RedisSearch] Error writing log entry: {e}")
+                raise
 
     supports_logs = True
     supports_metrics = False

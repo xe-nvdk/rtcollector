@@ -1,13 +1,16 @@
-interval: 10
-retention: 86400000  # 1 day in milliseconds
+interval: 5
+flush_interval: 10
+max_buffer_size: 5000        # Maximum number of entries to buffer if Redis is unavailable
+warn_on_buffer: true
 hostname: ''
+
 debug: true
 once: false
 
 inputs:
-  # - linux_cpu
-  # - linux_mem
-  # - linux_disk
+  - linux_cpu
+  - linux_mem
+  - linux_disk
   # - linux_io
   # - linux_net
   # - macos_cpu
@@ -63,8 +66,13 @@ outputs:
   - redistimeseries:
       host: atila.taild1b8e.ts.net
       port: 6379
+      retention: 1y
   - redissearch:
       host: atila.taild1b8e.ts.net
       port: 6379
       index: "logs_idx"
       key_prefix: "log:"
+      # Example proxy configuration for Redis outputs:
+      # socks5_proxy: "socks5://username:password@127.0.0.1:1080"
+      # socks4_proxy: "socks4://127.0.0.1:1080"
+      # http_proxy: "http://username:password@proxy.example.com:8080"

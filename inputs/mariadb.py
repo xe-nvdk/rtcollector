@@ -6,15 +6,12 @@ from utils.system import get_hostname
 def collect(config=None):
     if config is None:
         config = {}
-    print(f"[mariadb] Debug: Raw config: {config}")  # Debug print
     
     # If config is a dict with a 'mariadb' key, use that as our config
     if isinstance(config, dict) and "mariadb" in config:
         db_config = config["mariadb"]
     else:
         db_config = config
-    
-    print(f"[mariadb] Debug: Using config: {db_config}")  # Debug print
     
     metric_names = db_config.get("metrics", ["Threads_connected", "Connections", "Uptime", "Questions"])
     hostname = db_config.get("hostname", get_hostname())

@@ -5,6 +5,31 @@ import platform
 from datetime import datetime
 from core.collector import Collector
 from core.config import load_config
+from urllib.parse import urlparse
+
+def apply_proxy_settings(config):
+    try:
+        import socks
+        import socket
+    except ImportError:
+        print("[Proxy] PySocks not installed. Skipping proxy setup.")
+        return
+
+    outputs = config.get("outputs", [])
+    for output in outputs:
+        for name, params in output.items():
+            proxy_url = params.get("socks5_proxy") or params.get("socks4_proxy")
+            if proxy_url:
+                parsed = urlparse(proxy_url)
+                if parsed.scheme in ("socks5", "socks4"):
+                    proxy_type = socks.SOCKS5 if parsed.scheme == "socks5" else socks.SOCKS4
+                    proxy_host = parsed.hostname
+                    proxy_port = parsed.port
+                    proxy_username = parsed.username
+                    proxy_password = parsed.password
+                    print(f"[Proxy] Enabling {parsed.scheme.upper()} proxy to {proxy_host}:{proxy_port}")
+                    socks.set_default_proxy(proxy_type, proxy_host, proxy_port, True, proxy_username, proxy_password)
+                    socket.socket = socks.socksocket
 
 def main():
     parser = argparse.ArgumentParser(description="Run rtcollector")
@@ -14,6 +39,8 @@ def main():
     args = parser.parse_args()
 
     config = load_config(args.config)
+
+    apply_proxy_settings(config)
 
     # Detect OS for plugin mapping
     system = platform.system().lower()  # 'linux', 'darwin', 'windows'
@@ -98,12 +125,20 @@ def main():
             else:
                 output.write(metrics)
     else:
-        collector = Collector(
-            interval=config["interval"],
-            inputs=inputs,
-            outputs=outputs,
-            tags=config.get("tags", {})
-        )
+        collector_args = {
+            "interval": config["interval"],
+            "flush_interval": config.get("flush_interval"),
+            "inputs": inputs,
+            "outputs": outputs,
+            "tags": config.get("tags")
+        }
+
+        if "warn_on_buffer" in config:
+            collector_args["warn_on_buffer"] = config["warn_on_buffer"]
+        if "buffer_limit" in config:
+            collector_args["buffer_limit"] = config["buffer_limit"]
+
+        collector = Collector(**collector_args)
         collector.output_types = output_types
         if args.debug:
             print(f"[{datetime.now().isoformat()}] [rtcollector] Starting in debug mode...")

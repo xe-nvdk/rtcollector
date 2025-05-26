@@ -75,6 +75,7 @@ Because most modern observability agents:
 | `postgres`     | ✅     | database stats, background writer metrics, replication lag monitoring  |
 | `redis`        | ✅     | Collects server stats, memory usage, CPU, clients, persistence, replication, stats, keyspace, and latency via INFO; fully configurable metrics list |
 | `exec`         | ✅     | run external scripts and collect metrics/logs via JSON or plaintext format (`metrics`) |
+| `http_response` | ✅     | monitor HTTP/HTTPS endpoints with response time, status code, SSL cert validation |
 
 ---
 
@@ -102,7 +103,7 @@ Because most modern observability agents:
 - [x] RedisJSON/RediSearch support for logs
 - [ ] Redis Streams support for realtime events
 - [x] PostgreSQL input plugin with database stats, background writer metrics, and replication monitoring
-- [ ] HTTP/HTTPS check plugin for health monitoring
+- [x] HTTP/HTTPS check plugin for health monitoring
 - [ ] Nginx / Apache metrics via status endpoint
 - [ ] SNMP input plugin for networking devices
 - [ ] JVM metrics via Jolokia
@@ -197,6 +198,22 @@ inputs:
       data_format: "metrics"  # or "json"
       timeout: 5
       ignore_error: false
+      working_dir: "/opt/scripts"  # optional working directory
+      environment:
+        - "ENV_VAR=value"
+  - http_response:
+      urls:
+        - "https://api.example.com/health"
+        - "http://localhost:8080/status"
+      method: "GET"
+      timeout: 5
+      follow_redirects: true
+      headers:
+        User-Agent: "rtcollector"
+        Authorization: "Bearer token123"
+      response_status_code: 200
+      response_string_match: "healthy"
+      insecure_skip_verify: false
 
 outputs:
   - redistimeseries:
@@ -273,6 +290,37 @@ disk_usage_percent 84.3 source=exec host=atila ts=1716734400123
   ```
 
 - Proxy support is optional and applied only if configured.
+
+### 🌐 HTTP Response Plugin
+
+The HTTP Response input plugin monitors HTTP/HTTPS endpoints and collects metrics about their health and performance:
+
+- **Response Time**: Measures how long requests take to complete
+- **Status Code**: Records the HTTP status code returned by the endpoint
+- **Content Length**: Tracks the size of the response body
+- **String Matching**: Checks if the response contains specific text patterns
+- **SSL Certificate**: For HTTPS endpoints, monitors certificate expiration time
+
+Configuration options:
+- `urls`: List of URLs to monitor
+- `method`: HTTP method to use (GET, POST, etc.)
+- `timeout`: Request timeout in seconds
+- `follow_redirects`: Whether to follow HTTP redirects
+- `headers`: Custom HTTP headers to include in requests
+- `body`: Request body for POST/PUT requests
+- `response_status_code`: Expected status code to check for
+- `response_string_match`: Regex pattern to search for in responses
+- `insecure_skip_verify`: Whether to skip SSL certificate validation
+- `response_body_field`: If set, stores response bodies in logs with this field name
+- `response_body_max_size`: Maximum size of stored response bodies
+
+Example metrics:
+- `http_response_response_time`: Time taken to complete the request
+- `http_response_status_code`: HTTP status code returned
+- `http_response_content_length`: Size of the response in bytes
+- `http_response_string_match`: Whether the response matched the expected pattern (1=yes, 0=no)
+- `http_response_cert_expiry`: Time until SSL certificate expiration (in seconds)
+- `http_response_result_code`: Error code (0=success, 1=timeout, 2=connection error, etc.)
 
 ### 🐘 PostgreSQL Plugin
 

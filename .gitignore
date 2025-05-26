@@ -10,6 +10,8 @@ venv/
 ENV/
 env.bak/
 *.env
+pyvenv.cfg
+.Python
 
 # PyInstaller
 *.spec
@@ -55,3 +57,4 @@ Thumbs.db
 
 lib/
 bin/
+__pycache__

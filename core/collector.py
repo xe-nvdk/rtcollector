@@ -62,16 +62,19 @@ class Collector:
                     plugin_logs_key = f"{plugin_name}_logs"
                     plugin_metrics_key = f"{plugin_name}_metrics"
                     count = 0
-                    if isinstance(data, dict) and plugin_logs_key in data and plugin_metrics_key in data:
-                        for item in data[plugin_metrics_key]:
-                            if isinstance(item, Metric):
-                                item.labels.update(self.tags)
-                                metrics_to_send.append(item)
-                                count += 1
-                        for log in data[plugin_logs_key]:
-                            if isinstance(log, dict):
-                                logs_to_send.append(log)
-                                count += 1
+                    if isinstance(data, dict):
+                        if plugin_metrics_key in data:
+                            for item in data[plugin_metrics_key]:
+                                if isinstance(item, Metric):
+                                    item.labels.update(self.tags)
+                                    print(f"[DEBUG] Accepted metric: {item.name}={item.value} tags={item.labels}")
+                                    metrics_to_send.append(item)
+                                    count += 1
+                        if plugin_logs_key in data:
+                            for log in data[plugin_logs_key]:
+                                if isinstance(log, dict):
+                                    logs_to_send.append(log)
+                                    count += 1
                     elif isinstance(data, tuple) and len(data) == 2:
                         metrics_part, logs_part = data
                         for item in metrics_part:

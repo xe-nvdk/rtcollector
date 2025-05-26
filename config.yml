@@ -8,9 +8,9 @@ debug: true
 once: false
 
 inputs:
-  - linux_cpu
-  - linux_mem
-  - linux_disk
+  # - linux_cpu
+  # - linux_mem
+  # - linux_disk
   # - linux_io
   # - linux_net
   # - macos_cpu
@@ -46,21 +46,30 @@ inputs:
   #     best_effort: false
   #     syslog_standard: "RFC5424"
   #     sdparam_separator: "_"
-  - redis:
-      host: "127.0.0.1"
-      port: 6379
-      password: ""
-      db: 0
-  - mariadb:
-      host: "127.0.0.1"
-      port: 3306
-      user: "monitor"
-      password: "testpass"
-      metrics:
-        - Threads_connected
-        - Connections
-        - Uptime
-        - Questions
+  # - redis:
+  #     host: "127.0.0.1"
+  #     port: 6379
+  #     password: ""
+  #     db: 0
+  # - mariadb:
+  #     host: "127.0.0.1"
+  #     port: 3306
+  #     user: "monitor"
+  #     password: "testpass"
+  #     metrics:
+  #       - Threads_connected
+  #       - Connections
+  #       - Uptime
+  #       - Questions
+  - exec:
+      commands:
+        - "python3 /opt/scripts/report_temp.py"
+      environment:
+        - "ENV=production"
+        - "PATH=/usr/local/bin:/usr/bin"
+      timeout: 5
+      data_format: "metrics"
+      ignore_error: false
 
 outputs:
   - redistimeseries:

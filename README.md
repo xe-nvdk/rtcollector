@@ -74,6 +74,7 @@ Because most modern observability agents:
 | `mariadb`      | ✅     | collects server stats via `SHOW GLOBAL STATUS`; supports configurable metrics and basic auth  |
 | `postgres`     | 🧪     | connections, xact commits  |
 | `redis`        | ✅     | Collects server stats, memory usage, CPU, clients, persistence, replication, stats, keyspace, and latency via INFO; fully configurable metrics list |
+| `exec`         | ✅     | run external scripts and collect metrics/logs via JSON or plaintext format (`metrics`) |
 
 ---
 
@@ -179,6 +180,12 @@ inputs:
         - Connections
         - Uptime
         - Questions
+  - exec:
+      commands:
+        - "python3 /opt/scripts/report_temp.py"
+      data_format: "metrics"  # or "json"
+      timeout: 5
+      ignore_error: false
 
 outputs:
   - redistimeseries:
@@ -191,6 +198,37 @@ outputs:
       index: "logs_idx"
       key_prefix: "log:"
 ```
+---
+
+## ✍️ Exec Plugin Formats
+
+The `exec` input plugin supports two output formats from your script:
+
+### `json` format (structured logs + metrics):
+
+```json
+{
+  "metrics": {
+    "cpu_temp": 72.3,
+    "disk_used": 81
+  },
+  "logs": [
+    {
+      "message": "CPU temp is normal",
+      "level": "info"
+    }
+  ]
+}
+```
+
+### `metrics` format (line-by-line for RedisTimeSeries):
+
+```
+cpu_temp 72.4 source=exec host=atila
+disk_usage_percent 84.3 source=exec host=atila ts=1716734400123
+```
+
+- Each line includes a metric name, value, optional labels (`key=value`), and optional timestamp (`ts=...` in milliseconds).
 ---
 
 ## 🧰 Configuration Notes

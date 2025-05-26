@@ -37,21 +37,43 @@ Because most modern observability agents:
 
 ## ✅ What it can do (today)
 
-- ⏱️ Collect metrics at configurable intervals
-- 📦 Modular input plugins (Linux CPU, Mem, Disk, etc.)
-- 🚀 Push metrics to RedisTimeSeries (via `TS.ADD`)
-- ⚙️ Fully YAML-configurable. No code changes needed to enable/disable plugins
-- 📚 Built with Python and easy to extend
-- 💻 Support for MacOS and Linux
-- 🏷️ Label-based key creation with per-host and per-core tags
-- 🐞 Debug logging and one-shot execution support
-- 🐳 Docker metrics via container stats and engine info
-- 📥 Receive and index logs via Syslog input (RFC5424/RFC3164) using RedisSearch
+### Core Features
+- ⏱️ Collect metrics at configurable intervals with flexible flush timing
+- 📦 Modular plugin architecture with easy extension points
+- 🚀 Push metrics to RedisTimeSeries with automatic key creation
+- ⚙️ Fully YAML-configurable with no code changes needed
+- 📚 Built with Python for easy customization and extension
+- 💻 Cross-platform support for MacOS and Linux systems
+- 🏷️ Label-based metrics with automatic host and component tagging
+- 🐞 Debug logging and one-shot execution for testing
+- 📦 Memory buffering during Redis downtime with automatic recovery
 - 🕒 Per-plugin timing with slow detection and warning indicators
-- 🐬 Collect metrics from MariaDB servers using `SHOW GLOBAL STATUS`, configurable and with authentication support
-- ⏳ Support for human-readable retention settings (e.g., `1d`, `12h`, `1y`) for RedisTimeSeries
-- 📦 Memory buffering for metrics and logs during Redis downtime with automatic flush and progress bar
-- 🌐 Optional SOCKS4 and SOCKS5 proxy support for Redis-based outputs, including authentication
+
+### System Monitoring
+- 💻 CPU usage tracking (per-core and total)
+- 🧠 Memory usage and availability metrics
+- 💾 Disk usage and I/O performance statistics
+- 🌐 Network traffic and error monitoring
+- 🔄 System load and process statistics
+
+### Application & Service Monitoring
+- 🐳 Docker container metrics (CPU, memory, network)
+- 🐘 PostgreSQL database statistics, background writer, and replication monitoring
+- 🐬 MariaDB/MySQL server metrics with configurable metric selection
+- 🔴 Redis server statistics, memory usage, and performance metrics
+- 🌐 HTTP/HTTPS endpoint health with response time and certificate monitoring
+- 🔌 External command execution for custom metric collection
+
+### Log Collection
+- 📥 Syslog server (RFC5424/RFC3164) with structured logging
+- 🔍 Log indexing via RedisSearch for powerful querying
+
+### Advanced Features
+- ⏳ Human-readable retention settings (e.g., `1d`, `12h`, `1y`)
+- 🌐 SOCKS4/SOCKS5 proxy support for Redis connections
+- 🔒 Authentication support for database connections
+- 📊 Custom query support for database plugins
+- 🧩 Multiple output formats for the exec plugin (JSON, metrics)
 
 ---
 

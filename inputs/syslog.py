@@ -8,9 +8,13 @@ from utils.system import get_hostname
 
 syslog_collector_instance = None
 
+# Regex for standard syslog format
 SYSLOG_REGEX = re.compile(
     r"<(?P<pri>\d+)>(?P<timestamp>[^\s]+) (?P<hostname>[^\s]+) (?P<appname>[^\s]+)(?:\[(?P<procid>\d+)\])?: (?P<message>.*)"
 )
+
+# Regex to split multiple syslog messages
+SYSLOG_SPLIT_REGEX = re.compile(r"<\d+>")
 
 def parse_syslog(message):
     match = SYSLOG_REGEX.match(message)
@@ -29,31 +33,78 @@ def parse_syslog(message):
         "message": data["message"]
     }
 
+def split_syslog_messages(data):
+    """Split a buffer that may contain multiple syslog messages"""
+    # Convert bytes to string if needed
+    if isinstance(data, bytes):
+        data = data.decode('utf-8', errors='ignore')
+    
+    # Find all positions where a new syslog message starts
+    positions = [0] + [m.start() for m in SYSLOG_SPLIT_REGEX.finditer(data) if m.start() > 0]
+    
+    # Extract individual messages
+    messages = []
+    for i in range(len(positions)):
+        start = positions[i]
+        end = positions[i+1] if i+1 < len(positions) else len(data)
+        message = data[start:end].strip()
+        if message:
+            messages.append(message)
+    
+    # If no messages were found or split failed, return the original as a single message
+    if not messages:
+        messages = [data]
+    
+    return messages
+
 class SyslogTCPHandler(socketserver.BaseRequestHandler):
     def handle(self):
         try:
+            buffer = ""
             while True:
                 data = self.request.recv(1024)
                 if not data:
                     break
-                self.process_message(data)
+                
+                # Add new data to buffer
+                buffer += data.decode('utf-8', errors='ignore')
+                
+                # Process complete messages
+                messages = split_syslog_messages(buffer)
+                if messages:
+                    # Keep the last partial message in buffer if it doesn't end with newline
+                    if not buffer.endswith('\n') and len(messages) > 1:
+                        buffer = messages[-1]
+                        messages = messages[:-1]
+                    else:
+                        buffer = ""
+                    
+                    # Process each complete message
+                    for message in messages:
+                        if message:
+                            self.process_message(message)
         except Exception as e:
             print(f"[syslog] TCP handler error: {e}")
 
-    def process_message(self, data):
-        message = data.decode('utf-8', errors='ignore')
+    def process_message(self, message):
         timestamp = int(datetime.utcnow().timestamp() * 1000)
         labels = {
             "host": self.server.hostname,
             "remote_ip": self.client_address[0],
         }
+        
+        # Try to parse the message
         parsed = parse_syslog(message)
         if parsed:
             labels.update(parsed)
         else:
             labels["message"] = message
+        
+        # Use appname in the log entry name if available
+        log_name = f"syslog_{labels.get('appname', 'message')}" if 'appname' in labels else "syslog_message"
+        
         log_entry = {
-            "name": "syslog_message",
+            "name": log_name,
             "timestamp": timestamp,
             **labels
         }
@@ -63,19 +114,35 @@ class SyslogUDPHandler(socketserver.BaseRequestHandler):
     def handle(self):
         data = self.request[0].strip()
         client_address = self.client_address
-        message = data.decode('utf-8', errors='ignore')
+        
+        # Process each message in the UDP packet
+        messages = split_syslog_messages(data)
+        for message in messages:
+            if message:
+                self.process_message(message, client_address)
+
+    def process_message(self, message, client_address):
         timestamp = int(datetime.utcnow().timestamp() * 1000)
         labels = {
             "host": self.server.hostname,
             "remote_ip": client_address[0],
         }
+        
+        # Try to parse the message
+        if isinstance(message, bytes):
+            message = message.decode('utf-8', errors='ignore')
+            
         parsed = parse_syslog(message)
         if parsed:
             labels.update(parsed)
         else:
             labels["message"] = message
+        
+        # Use appname in the log entry name if available
+        log_name = f"syslog_{labels.get('appname', 'message')}" if 'appname' in labels else "syslog_message"
+        
         log_entry = {
-            "name": "syslog_message",
+            "name": log_name,
             "timestamp": timestamp,
             **labels
         }

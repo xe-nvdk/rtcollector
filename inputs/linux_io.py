@@ -1,56 +1,151 @@
-
-
-
 import socket
 import time
+import platform
 from core.metric import Metric
 
-def _read_diskstats():
-    stats = {}
-    with open("/proc/diskstats", "r") as f:
-        for line in f:
-            parts = line.strip().split()
-            if len(parts) < 14:
-                continue
-            major, minor, dev = parts[0], parts[1], parts[2]
-            reads = int(parts[3])
-            read_sectors = int(parts[5])
-            writes = int(parts[7])
-            write_sectors = int(parts[9])
-            stats[dev] = {
-                "reads": reads,
-                "read_sectors": read_sectors,
-                "writes": writes,
-                "write_sectors": write_sectors,
-            }
-    return stats
-
+# Store previous stats for delta calculations
 _last_stats = {}
+_last_time = 0
 
-def collect():
-    global _last_stats
-    timestamp = int(time.time() * 1000)
-    current = _read_diskstats()
-    hostname = socket.gethostname()
+def collect(config=None):
+    # Verify we're on Linux
+    if platform.system() != "Linux":
+        return {
+            "linux_io_logs": [{
+                "message": "linux_io plugin can only run on Linux systems",
+                "level": "error",
+                "tags": {"source": "linux_io"}
+            }]
+        }
+    
     metrics = []
-
-    if not _last_stats:
-        _last_stats = current
-        return []
-
-    for dev, vals in current.items():
-        if dev in _last_stats:
+    logs = []
+    timestamp = int(time.time() * 1000)
+    hostname = socket.gethostname()
+    
+    try:
+        # Read current disk stats
+        current_stats = _read_diskstats()
+        current_time = time.time()
+        
+        global _last_stats, _last_time
+        if not _last_stats or _last_time == 0:
+            _last_stats = current_stats
+            _last_time = current_time
+            return {
+                "linux_io_logs": [{
+                    "message": "Initialized IO stats, waiting for next collection cycle",
+                    "level": "info",
+                    "tags": {"source": "linux_io"}
+                }]
+            }
+        
+        # Calculate time delta in seconds
+        time_delta = current_time - _last_time
+        if time_delta <= 0:
+            logs.append({
+                "message": "Invalid time delta, skipping IO metrics collection",
+                "level": "warn",
+                "tags": {"source": "linux_io"}
+            })
+            return {"linux_io_logs": logs}
+        
+        # Process each device
+        for dev, vals in current_stats.items():
+            if dev not in _last_stats:
+                continue
+                
+            # Calculate deltas
             delta_reads = vals["reads"] - _last_stats[dev]["reads"]
             delta_writes = vals["writes"] - _last_stats[dev]["writes"]
-            delta_rsec = vals["read_sectors"] - _last_stats[dev]["read_sectors"]
-            delta_wsec = vals["write_sectors"] - _last_stats[dev]["write_sectors"]
-            labels = {"device": dev, "host": hostname}
+            delta_read_sectors = vals["read_sectors"] - _last_stats[dev]["read_sectors"]
+            delta_write_sectors = vals["write_sectors"] - _last_stats[dev]["write_sectors"]
+            delta_read_time = vals["read_time"] - _last_stats[dev]["read_time"]
+            delta_write_time = vals["write_time"] - _last_stats[dev]["write_time"]
+            delta_io_time = vals["io_time"] - _last_stats[dev]["io_time"]
+            
+            # Calculate rates
+            reads_per_sec = delta_reads / time_delta
+            writes_per_sec = delta_writes / time_delta
+            
+            # Convert sectors to bytes (512 bytes per sector)
+            read_bytes = delta_read_sectors * 512
+            write_bytes = delta_write_sectors * 512
+            read_bytes_per_sec = read_bytes / time_delta
+            write_bytes_per_sec = write_bytes / time_delta
+            
+            # Calculate IO utilization (percentage of time the device was busy)
+            io_util_percent = min(100.0, (delta_io_time / (time_delta * 1000)) * 100)
+            
+            # Common labels
+            labels = {"source": "linux_io", "device": dev, "host": hostname}
+            
+            # Add metrics
             metrics.extend([
-                Metric(name="disk_reads", value=delta_reads, timestamp=timestamp, labels=labels),
-                Metric(name="disk_writes", value=delta_writes, timestamp=timestamp, labels=labels),
-                Metric(name="disk_read_sectors", value=delta_rsec, timestamp=timestamp, labels=labels),
-                Metric(name="disk_write_sectors", value=delta_wsec, timestamp=timestamp, labels=labels),
+                # Raw counters
+                Metric(name="io_reads", value=delta_reads, timestamp=timestamp, labels=labels),
+                Metric(name="io_writes", value=delta_writes, timestamp=timestamp, labels=labels),
+                Metric(name="io_read_bytes", value=read_bytes, timestamp=timestamp, labels=labels),
+                Metric(name="io_write_bytes", value=write_bytes, timestamp=timestamp, labels=labels),
+                
+                # Rates
+                Metric(name="io_reads_per_sec", value=reads_per_sec, timestamp=timestamp, labels=labels),
+                Metric(name="io_writes_per_sec", value=writes_per_sec, timestamp=timestamp, labels=labels),
+                Metric(name="io_read_bytes_per_sec", value=read_bytes_per_sec, timestamp=timestamp, labels=labels),
+                Metric(name="io_write_bytes_per_sec", value=write_bytes_per_sec, timestamp=timestamp, labels=labels),
+                
+                # Timing
+                Metric(name="io_read_time_ms", value=delta_read_time, timestamp=timestamp, labels=labels),
+                Metric(name="io_write_time_ms", value=delta_write_time, timestamp=timestamp, labels=labels),
+                Metric(name="io_util_percent", value=io_util_percent, timestamp=timestamp, labels=labels),
             ])
+        
+        # Update last stats for next collection
+        _last_stats = current_stats
+        _last_time = current_time
+        
+    except Exception as e:
+        logs.append({
+            "message": f"Error collecting Linux IO metrics: {e}",
+            "level": "error",
+            "tags": {"source": "linux_io"}
+        })
+    
+    return {
+        "linux_io_metrics": metrics,
+        "linux_io_logs": logs
+    }
 
-    _last_stats = current
-    return metrics
+def _read_diskstats():
+    """Read and parse /proc/diskstats"""
+    stats = {}
+    try:
+        with open("/proc/diskstats", "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) < 14:
+                    continue
+                    
+                # Skip partitions (we only want whole disks)
+                dev = parts[2]
+                if dev.startswith(('loop', 'ram', 'dm-')):
+                    continue
+                    
+                # Extract values from diskstats
+                # See https://www.kernel.org/doc/Documentation/ABI/testing/procfs-diskstats
+                stats[dev] = {
+                    "reads": int(parts[3]),                  # Field 1: reads completed
+                    "read_merged": int(parts[4]),            # Field 2: reads merged
+                    "read_sectors": int(parts[5]),           # Field 3: sectors read
+                    "read_time": int(parts[6]),              # Field 4: time spent reading (ms)
+                    "writes": int(parts[7]),                 # Field 5: writes completed
+                    "write_merged": int(parts[8]),           # Field 6: writes merged
+                    "write_sectors": int(parts[9]),          # Field 7: sectors written
+                    "write_time": int(parts[10]),            # Field 8: time spent writing (ms)
+                    "io_in_progress": int(parts[11]),        # Field 9: I/Os currently in progress
+                    "io_time": int(parts[12]),               # Field 10: time spent doing I/Os (ms)
+                    "io_weighted_time": int(parts[13]),      # Field 11: weighted time spent doing I/Os (ms)
+                }
+    except Exception as e:
+        print(f"[linux_io] Error reading /proc/diskstats: {e}")
+    return stats

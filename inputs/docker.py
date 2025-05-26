@@ -1,418 +1,381 @@
 import requests_unixsocket
 import time
 import socket
+import platform
 from core.metric import Metric
-from datetime import datetime
 import concurrent.futures
 
 class DockerStatsCollector:
     def __init__(self, config):
-        self.config = config if "endpoint" in config or "swarm_enabled" in config else config.get('inputs', {}).get('docker', {})
+        self.config = config if isinstance(config, dict) else {}
         self.endpoint = self.config.get('endpoint', 'unix:///var/run/docker.sock')
         self.session = requests_unixsocket.Session()
         self.hostname = socket.gethostname()
-        self.client = None  # Placeholder to avoid attribute errors for legacy code paths
+        self.container_include = self.config.get('container_name_include', [])
+        self.container_exclude = self.config.get('container_name_exclude', [])
+        self.max_workers = self.config.get('max_workers', 10)  # Limit concurrent requests
+        
+        # Convert Unix socket path to URL format
+        if self.endpoint.startswith('unix://'):
+            path = self.endpoint[7:]
+            self.base_url = f'http+unix://{path.replace("/", "%2F")}'
+        else:
+            self.base_url = self.endpoint
 
-    def collect_engine_metrics(self, timestamp):
-        metrics = []
-        # Use raw API for engine info
-        try:
-            resp = self.session.get('http+unix://%2Fvar%2Frun%2Fdocker.sock/info')
-            info = resp.json() if resp.ok else {}
-        except Exception as e:
-            print(f"[docker] Failed to get engine info: {e}")
-            return metrics
-
-        try:
-            resp = self.session.get('http+unix://%2Fvar%2Frun%2Fdocker.sock/version')
-            version_info = resp.json() if resp.ok else {}
-            server_version = version_info.get("Version", "unknown")
-        except Exception as e:
-            print(f"[docker] Failed to get engine version: {e}")
-            server_version = "unknown"
-
-        tags = {
-            "engine_host": self.hostname,
-            "server_version": server_version,
-        }
-
-        fields = {
-            "n_cpus": info.get("NCPU"),
-            "n_containers": info.get("Containers"),
-            "n_containers_running": info.get("ContainersRunning"),
-            "n_containers_paused": info.get("ContainersPaused"),
-            "n_containers_stopped": info.get("ContainersStopped"),
-            "n_images": info.get("Images"),
-            "n_goroutines": info.get("NGoroutines"),
-            "n_listener_events": info.get("NEventsListener"),
-            "n_used_file_descriptors": info.get("NFd"),
-            "memory_total": info.get("MemTotal"),
-        }
-
-        for metric_name, value in fields.items():
-            if value is not None:
-                metrics.append(Metric(metric_name, timestamp, value, tags))
-        if self.config.get("debug", False):
-            print(f"[docker] Collected engine metrics: {fields}")
-
-        return metrics
-
-    def collect_swarm_metrics(self, timestamp):
-        # TODO: update this block to use raw API
-        metrics = []
-        return metrics
-
-    def collect_disk_usage_metrics(self, timestamp):
-        metrics = []
-        # Use raw API for disk usage
-        try:
-            resp_df = self.session.get('http+unix://%2Fvar%2Frun%2Fdocker.sock/system/df')
-            df = resp_df.json() if resp_df.ok else {}
-            resp_version = self.session.get('http+unix://%2Fvar%2Frun%2Fdocker.sock/version')
-            version_info = resp_version.json() if resp_version.ok else {}
-            server_version = version_info.get("Version", "unknown")
-            tags_base = {
-                "engine_host": self.hostname,
-                "server_version": server_version,
+    def collect(self):
+        if platform.system() not in ["Linux", "Darwin"]:
+            return {
+                "docker_logs": [{
+                    "message": "Docker plugin is only supported on Linux and macOS",
+                    "level": "error",
+                    "tags": {"source": "docker"}
+                }]
             }
-
-            # Containers disk usage
-            containers = df.get('Containers', [])
-            for container in containers:
-                try:
-                    container_id = container.get('Id', 'unknown')
-                    container_name = container.get('Names', ['unknown'])[0] if container.get('Names') else 'unknown'
-                    size_rw = container.get('SizeRw', 0)
-                    size_root_fs = container.get('SizeRootFs', 0)
-                    tags = tags_base.copy()
-                    tags.update({
-                        "container_id": container_id,
-                        "container_name": container_name,
-                    })
-                    metrics.append(Metric("docker_disk_usage_container_size_rw", timestamp, size_rw, tags))
-                    metrics.append(Metric("docker_disk_usage_container_size_root_fs", timestamp, size_root_fs, tags))
-                except Exception as e:
-                    print(f"[docker] Error collecting disk usage for container {container.get('Id', '')}: {e}")
-                    continue
-
-            # Images disk usage
-            images = df.get('Images', [])
-            for image in images:
-                try:
-                    image_id = image.get('Id', 'unknown')
-                    repo_tags = image.get('RepoTags', [])
-                    image_name = repo_tags[0] if repo_tags else 'unknown'
-                    shared_size = image.get('SharedSize', 0)
-                    size = image.get('Size', 0)
-                    tags = tags_base.copy()
-                    tags.update({
-                        "image_id": image_id,
-                        "image_name": image_name,
-                    })
-                    metrics.append(Metric("docker_disk_usage_image_shared_size", timestamp, shared_size, tags))
-                    metrics.append(Metric("docker_disk_usage_image_size", timestamp, size, tags))
-                except Exception as e:
-                    print(f"[docker] Error collecting disk usage for image {image.get('Id', '')}: {e}")
-                    continue
-
-            # Volumes disk usage
-            volumes = df.get('Volumes', [])
-            for volume in volumes:
-                try:
-                    volume_name = volume.get('Name', 'unknown')
-                    volume_size = volume.get('UsageData', {}).get('Size', 0)
-                    tags = tags_base.copy()
-                    tags.update({
-                        "volume_name": volume_name,
-                    })
-                    metrics.append(Metric("docker_disk_usage_volume_size", timestamp, volume_size, tags))
-                except Exception as e:
-                    print(f"[docker] Error collecting disk usage for volume {volume.get('Name', '')}: {e}")
-                    continue
-
-        except Exception as e:
-            print(f"[docker] Failed to get disk usage info: {e}")
-        return metrics
-
-    def _collect_container_metrics(self, container, timestamp):
+        
         metrics = []
+        logs = []
+        timestamp = int(time.time() * 1000)
+        start_time = time.time()
+        
+        try:
+            # Get server version once for all metrics
+            try:
+                resp = self.session.get(f'{self.base_url}/version', timeout=5)
+                version_info = resp.json() if resp.ok else {}
+                server_version = version_info.get("Version", "unknown")
+            except Exception as e:
+                logs.append({
+                    "message": f"Failed to get Docker version: {e}",
+                    "level": "error",
+                    "tags": {"source": "docker"}
+                })
+                server_version = "unknown"
+            
+            # Get container list
+            try:
+                containers_resp = self.session.get(f'{self.base_url}/containers/json', timeout=5)
+                containers = containers_resp.json() if containers_resp.ok else []
+                
+                # Filter containers based on include/exclude lists
+                filtered_containers = []
+                for container in containers:
+                    container_name = container.get("Names", [""])[0].lstrip('/')
+                    
+                    # Apply include/exclude filters
+                    if self.container_include and not any(pattern in container_name for pattern in self.container_include):
+                        continue
+                    if self.container_exclude and any(pattern in container_name for pattern in self.container_exclude):
+                        continue
+                    
+                    filtered_containers.append(container)
+                
+                # Collect container metrics in parallel with limited concurrency
+                container_metrics = []
+                with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                    futures = [executor.submit(self._collect_container_metrics, container, timestamp, server_version) 
+                              for container in filtered_containers]
+                    
+                    for future in concurrent.futures.as_completed(futures):
+                        try:
+                            result = future.result()
+                            container_metrics.extend(result.get("metrics", []))
+                            logs.extend(result.get("logs", []))
+                        except Exception as e:
+                            logs.append({
+                                "message": f"Error processing container metrics: {e}",
+                                "level": "error",
+                                "tags": {"source": "docker"}
+                            })
+                
+                metrics.extend(container_metrics)
+            except Exception as e:
+                logs.append({
+                    "message": f"Failed to list containers: {e}",
+                    "level": "error",
+                    "tags": {"source": "docker"}
+                })
+            
+            # Collect engine metrics
+            if self.config.get("collect_engine_metrics", True):
+                engine_result = self._collect_engine_metrics(timestamp, server_version)
+                metrics.extend(engine_result.get("metrics", []))
+                logs.extend(engine_result.get("logs", []))
+            
+            # Collect disk usage metrics
+            if self.config.get("collect_disk_usage", True):
+                disk_result = self._collect_disk_usage_metrics(timestamp, server_version)
+                metrics.extend(disk_result.get("metrics", []))
+                logs.extend(disk_result.get("logs", []))
+            
+            # Collect swarm metrics if enabled
+            if self.config.get("swarm_enabled", False):
+                swarm_result = self._collect_swarm_metrics(timestamp, server_version)
+                metrics.extend(swarm_result.get("metrics", []))
+                logs.extend(swarm_result.get("logs", []))
+            
+            # Log collection time if debug is enabled
+            collection_time = time.time() - start_time
+            if self.config.get("debug", False):
+                logs.append({
+                    "message": f"Docker metrics collection completed in {collection_time:.2f}s, collected {len(metrics)} metrics",
+                    "level": "debug",
+                    "tags": {"source": "docker"}
+                })
+            
+        except Exception as e:
+            logs.append({
+                "message": f"Error in Docker metrics collection: {e}",
+                "level": "error",
+                "tags": {"source": "docker"}
+            })
+        
+        return {
+            "docker_metrics": metrics,
+            "docker_logs": logs
+        }
+
+    def _collect_container_metrics(self, container, timestamp, server_version):
+        metrics = []
+        logs = []
+        
         try:
             container_id = container.get("Id", "")
-            container_name = container.get("Names", ["unknown"])
-            container_name = container_name[0] if container_name else "unknown"
-            # Get stats for each container
-            stats_resp = self.session.get(f'http+unix://%2Fvar%2Frun%2Fdocker.sock/containers/{container_id}/stats?stream=false')
-            stats = stats_resp.json() if stats_resp.ok else {}
-            # Get image and version info
+            container_name = container.get("Names", ["unknown"])[0].lstrip('/')
             container_image = container.get("Image", "unknown")
-            container_version = "unknown"
             container_status = container.get("State", "unknown")
             short_id = container_id[:12] if container_id else "unknown"
-            # Try to get RepoDigests if possible
-            # TODO: update this block to use raw API for image details if needed
+            
+            # Common tags for all metrics from this container
             tags = {
+                "source": "docker",
                 "engine_host": self.hostname,
-                # get server version for tags
-                "server_version": "unknown",
+                "server_version": server_version,
                 "container_image": container_image,
-                "container_version": container_version,
-                "container_name": container_name.lstrip('/'),
+                "container_name": container_name,
                 "container_status": container_status,
                 "container_id": short_id,
             }
+            
+            # Get container stats (non-streaming)
+            stats_resp = self.session.get(f'{self.base_url}/containers/{container_id}/stats?stream=false', timeout=5)
+            if not stats_resp.ok:
+                logs.append({
+                    "message": f"Failed to get stats for container {container_name}: HTTP {stats_resp.status_code}",
+                    "level": "error",
+                    "tags": {"source": "docker", "container": container_name}
+                })
+                return {"metrics": [], "logs": logs}
+            
+            stats = stats_resp.json()
+            
             # CPU metrics
-            cpu_stats = stats.get("cpu_stats", {}) if isinstance(stats.get("cpu_stats"), dict) else {}
-            precpu_stats = stats.get("precpu_stats", {}) if isinstance(stats.get("precpu_stats"), dict) else {}
-            cpu_usage = cpu_stats.get("cpu_usage", {}) if isinstance(cpu_stats.get("cpu_usage"), dict) else {}
-            pre_cpu_usage = precpu_stats.get("cpu_usage", {}) if isinstance(precpu_stats.get("cpu_usage"), dict) else {}
+            cpu_stats = stats.get("cpu_stats", {})
+            precpu_stats = stats.get("precpu_stats", {})
+            cpu_usage = cpu_stats.get("cpu_usage", {})
+            pre_cpu_usage = precpu_stats.get("cpu_usage", {})
+            
+            # Calculate CPU percentage
             system_cpu_usage = cpu_stats.get("system_cpu_usage", 0)
             pre_system_cpu_usage = precpu_stats.get("system_cpu_usage", 0)
-            percpu_usage_list = cpu_usage.get("percpu_usage", [])
-            online_cpus = cpu_stats.get("online_cpus") or (len(percpu_usage_list) if isinstance(percpu_usage_list, list) else 0) or 1
-
             usage_total = cpu_usage.get("total_usage", 0)
-            usage_in_usermode = cpu_usage.get("usage_in_usermode", 0)
-            usage_in_kernelmode = cpu_usage.get("usage_in_kernelmode", 0)
-            percpu_usage = percpu_usage_list if isinstance(percpu_usage_list, list) else []
-            cpu_delta = usage_total - pre_cpu_usage.get("total_usage", 0)
+            pre_usage_total = pre_cpu_usage.get("total_usage", 0)
+            
+            # Get number of CPUs
+            percpu_usage = cpu_usage.get("percpu_usage", [])
+            online_cpus = cpu_stats.get("online_cpus") or len(percpu_usage) or 1
+            
+            # Calculate CPU percentage
+            cpu_delta = usage_total - pre_usage_total
             system_delta = system_cpu_usage - pre_system_cpu_usage
             cpu_percent = 0.0
             if system_delta > 0 and cpu_delta > 0:
                 cpu_percent = (cpu_delta / system_delta) * online_cpus * 100.0
-
-            metrics.append(Metric("docker_cpu_percent", timestamp, cpu_percent, tags))
-            metrics.append(Metric("docker_cpu_usage_total", timestamp, usage_total, tags))
-            metrics.append(Metric("docker_cpu_usage_in_usermode", timestamp, usage_in_usermode, tags))
-            metrics.append(Metric("docker_cpu_usage_in_kernelmode", timestamp, usage_in_kernelmode, tags))
-            metrics.append(Metric("docker_cpu_system", timestamp, system_cpu_usage, tags))
-            # Per-CPU usage
-            if isinstance(percpu_usage, list):
-                for idx, val in enumerate(percpu_usage):
-                    tags_percpu = tags.copy()
-                    tags_percpu["cpu"] = str(idx)
-                    metrics.append(Metric("docker_cpu_percpu_usage", timestamp, val, tags_percpu))
-
+            
+            # Add CPU metrics
+            metrics.append(Metric(
+                name="docker_cpu_percent",
+                value=cpu_percent,
+                labels=tags.copy(),
+                timestamp=timestamp
+            ))
+            
             # Memory metrics
             mem_stats = stats.get("memory_stats", {})
-            if not isinstance(mem_stats, dict):
-                mem_stats = {}
             mem_usage = mem_stats.get("usage", 0)
             mem_limit = mem_stats.get("limit", 1)
-            mem_max_usage = mem_stats.get("max_usage", 0)
-            mem_failcnt = mem_stats.get("failcnt", 0)
-            mem_percent = (mem_usage / mem_limit) * 100.0 if mem_limit else 0.0
-            metrics.append(Metric("docker_mem_usage", timestamp, mem_usage, tags))
-            metrics.append(Metric("docker_mem_limit", timestamp, mem_limit, tags))
-            metrics.append(Metric("docker_mem_max_usage", timestamp, mem_max_usage, tags))
-            metrics.append(Metric("docker_mem_failcnt", timestamp, mem_failcnt, tags))
-            metrics.append(Metric("docker_mem_percent", timestamp, mem_percent, tags))
-            # Add memory stats fields if present (Telegraf: total_rss, total_cache, etc.)
-            if isinstance(mem_stats, dict):
-                for memfield in ["total_rss", "total_cache", "total_inactive_file", "total_active_file", "total_pgmajfault"]:
-                    if memfield in mem_stats:
-                        metrics.append(Metric(f"docker_mem_{memfield}", timestamp, mem_stats[memfield], tags))
-
+            mem_percent = (mem_usage / mem_limit) * 100.0 if mem_limit > 0 else 0.0
+            
+            # Add memory metrics
+            metrics.append(Metric(
+                name="docker_mem_usage",
+                value=mem_usage,
+                labels=tags.copy(),
+                timestamp=timestamp
+            ))
+            
+            metrics.append(Metric(
+                name="docker_mem_limit",
+                value=mem_limit,
+                labels=tags.copy(),
+                timestamp=timestamp
+            ))
+            
+            metrics.append(Metric(
+                name="docker_mem_percent",
+                value=mem_percent,
+                labels=tags.copy(),
+                timestamp=timestamp
+            ))
+            
             # Network metrics
-            networks = stats.get("networks")
-            if isinstance(networks, dict):
-                for iface, net in networks.items():
-                    net_tags = tags.copy()
-                    net_tags["interface"] = iface
-                    for key in [
+            networks = stats.get("networks", {})
+            for iface, net in networks.items():
+                net_tags = tags.copy()
+                net_tags["interface"] = iface
+                
+                # Add network metrics
+                if isinstance(net, dict):
+                    for key, metric_name in [
                         ("rx_bytes", "docker_net_rx_bytes"),
-                        ("rx_packets", "docker_net_rx_packets"),
-                        ("rx_errors", "docker_net_rx_errors"),
-                        ("rx_dropped", "docker_net_rx_dropped"),
                         ("tx_bytes", "docker_net_tx_bytes"),
-                        ("tx_packets", "docker_net_tx_packets"),
-                        ("tx_errors", "docker_net_tx_errors"),
-                        ("tx_dropped", "docker_net_tx_dropped"),
                     ]:
-                        if isinstance(net, dict) and key[0] in net:
-                            metrics.append(Metric(key[1], timestamp, net[key[0]], net_tags))
-
-            # Block IO metrics
-            blkio_stats = stats.get("blkio_stats")
-            if not isinstance(blkio_stats, dict):
-                blkio_stats = {}
-            for stat_type in [
-                ("io_service_bytes_recursive", "docker_blkio_service_bytes"),
-                ("io_serviced_recursive", "docker_blkio_serviced"),
-                ("io_queue_recursive", "docker_blkio_queue"),
-                ("io_service_time_recursive", "docker_blkio_service_time"),
-                ("io_wait_time_recursive", "docker_blkio_wait_time"),
-                ("io_merged_recursive", "docker_blkio_merged"),
-                ("io_time_recursive", "docker_blkio_time"),
-                ("sectors_recursive", "docker_blkio_sectors"),
-            ]:
-                stat_list = blkio_stats.get(stat_type[0], [])
-                if isinstance(stat_list, list):
-                    for entry in stat_list:
-                        blk_tags = tags.copy()
-                        if isinstance(entry, dict):
-                            if "major" in entry and "minor" in entry:
-                                blk_tags["device"] = f"{entry['major']}:{entry['minor']}"
-                            if "op" in entry:
-                                blk_tags["op"] = entry["op"]
-                            val = entry.get("value")
-                            if val is not None:
-                                metrics.append(Metric(stat_type[1], timestamp, val, blk_tags))
-
-            # Container health/status metrics - not available directly, would require /containers/(id)/json
-            # TODO: update this block to use raw API for container health/status metrics
-
+                        if key in net:
+                            metrics.append(Metric(
+                                name=metric_name,
+                                value=net[key],
+                                labels=net_tags,
+                                timestamp=timestamp
+                            ))
+            
         except Exception as e:
-            print(f"[docker] Error collecting stats from {container.get('Names', ['unknown'])[0]}: {e}")
-        return metrics
+            logs.append({
+                "message": f"Error collecting stats for container {container.get('Names', ['unknown'])[0]}: {e}",
+                "level": "error",
+                "tags": {"source": "docker", "container": container.get('Names', ['unknown'])[0]}
+            })
+        
+        return {"metrics": metrics, "logs": logs}
 
-    def collect(self):
+    def _collect_engine_metrics(self, timestamp, server_version):
         metrics = []
-        timestamp = int(time.time() * 1000)
-
-        # Use raw API for containers list
+        logs = []
+        
         try:
-            containers_resp = self.session.get('http+unix://%2Fvar%2Frun%2Fdocker.sock/containers/json')
-            containers = containers_resp.json() if containers_resp.ok else []
-        except Exception as e:
-            print(f"[docker] Failed to list containers: {e}")
-            return []
-
-        # Parallelize container stats collection using ThreadPoolExecutor
-        container_metrics = []
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            futures = [executor.submit(self._collect_container_metrics, container, timestamp) for container in containers]
-            for future in concurrent.futures.as_completed(futures):
-                result = future.result()
-                if result:
-                    container_metrics.extend(result)
-        metrics.extend(container_metrics)
-
-        engine_metrics = self.collect_engine_metrics(timestamp)
-        metrics.extend(engine_metrics)
-
-        # Only collect swarm metrics if enabled in config
-        if self.config.get("swarm_enabled", False):
-            swarm_metrics = self.collect_swarm_metrics(timestamp)
-            metrics.extend(swarm_metrics)
-        else:
-            if self.config.get("debug", False):
-                print("[docker] Swarm metrics collection skipped (disabled in config)")
-
-        disk_usage_metrics = self.collect_disk_usage_metrics(timestamp)
-        metrics.extend(disk_usage_metrics)
-
-        if self.config.get("debug", False):
-            print(f"[docker] Collected total metrics count: {len(metrics)}")
-
-        return metrics
-
-
-    def collect_swarm_metrics(self, timestamp):
-        metrics = []
-        try:
-            services = self.client.services.list()
-            for service in services:
-                try:
-                    service_name = service.attrs.get('Spec', {}).get('Name', 'unknown')
-                    service_id = service.id
-                    service_mode = 'unknown'
-                    spec_mode = service.attrs.get('Spec', {}).get('Mode', {})
-                    if 'Replicated' in spec_mode:
-                        service_mode = 'replicated'
-                    elif 'Global' in spec_mode:
-                        service_mode = 'global'
-                    service_status = service.attrs.get('ServiceStatus', {})
-                    desired_tasks = service_status.get('DesiredTasks', 0)
-                    running_tasks = service_status.get('RunningTasks', 0)
-
-                    tags = {
-                        "engine_host": self.hostname,
-                        "server_version": self.client.version().get("Version", "unknown"),
-                        "service_id": service_id,
-                        "service_name": service_name,
-                        "service_mode": service_mode,
-                    }
-                    metrics.append(Metric("docker_swarm_desired_tasks", timestamp, desired_tasks, tags))
-                    metrics.append(Metric("docker_swarm_running_tasks", timestamp, running_tasks, tags))
-                except Exception as e:
-                    print(f"[docker] Error collecting swarm metrics for service {service.id}: {e}")
-                    continue
-        except Exception as e:
-            print(f"[docker] Failed to list swarm services: {e}")
-        return metrics
-
-    def collect_disk_usage_metrics(self, timestamp):
-        metrics = []
-        try:
-            resp_df = self.session.get('http+unix://%2Fvar%2Frun%2Fdocker.sock/system/df')
-            df = resp_df.json() if resp_df.ok else {}
-            resp_version = self.session.get('http+unix://%2Fvar%2Frun%2Fdocker.sock/version')
-            version_info = resp_version.json() if resp_version.ok else {}
-            server_version = version_info.get("Version", "unknown")
-            tags_base = {
+            # Get Docker engine info
+            resp = self.session.get(f'{self.base_url}/info', timeout=5)
+            if not resp.ok:
+                logs.append({
+                    "message": f"Failed to get Docker engine info: HTTP {resp.status_code}",
+                    "level": "error",
+                    "tags": {"source": "docker"}
+                })
+                return {"metrics": [], "logs": logs}
+            
+            info = resp.json()
+            
+            # Common tags
+            tags = {
+                "source": "docker",
                 "engine_host": self.hostname,
                 "server_version": server_version,
             }
+            
+            # Add engine metrics
+            engine_metrics = {
+                "docker_engine_containers": info.get("Containers", 0),
+                "docker_engine_containers_running": info.get("ContainersRunning", 0),
+                "docker_engine_containers_paused": info.get("ContainersPaused", 0),
+                "docker_engine_containers_stopped": info.get("ContainersStopped", 0),
+                "docker_engine_images": info.get("Images", 0),
+            }
+            
+            for name, value in engine_metrics.items():
+                metrics.append(Metric(
+                    name=name,
+                    value=value,
+                    labels=tags.copy(),
+                    timestamp=timestamp
+                ))
+            
+        except Exception as e:
+            logs.append({
+                "message": f"Error collecting Docker engine metrics: {e}",
+                "level": "error",
+                "tags": {"source": "docker"}
+            })
+        
+        return {"metrics": metrics, "logs": logs}
 
-            containers = df.get('Containers', [])
-            for container in containers:
+    def _collect_disk_usage_metrics(self, timestamp, server_version):
+        metrics = []
+        logs = []
+        
+        try:
+            # Get disk usage info
+            resp = self.session.get(f'{self.base_url}/system/df', timeout=5)
+            if not resp.ok:
+                logs.append({
+                    "message": f"Failed to get Docker disk usage info: HTTP {resp.status_code}",
+                    "level": "error",
+                    "tags": {"source": "docker"}
+                })
+                return {"metrics": [], "logs": logs}
+            
+            df = resp.json()
+            
+            # Common tags
+            base_tags = {
+                "source": "docker",
+                "engine_host": self.hostname,
+                "server_version": server_version,
+            }
+            
+            # Process container disk usage
+            for container in df.get('Containers', []):
                 try:
-                    container_id = container.get('Id', 'unknown')
+                    container_id = container.get('Id', 'unknown')[:12]
                     container_name = container.get('Names', ['unknown'])[0] if container.get('Names') else 'unknown'
-                    size_rw = container.get('SizeRw', 0)
-                    size_root_fs = container.get('SizeRootFs', 0)
-                    tags = tags_base.copy()
+                    
+                    # Skip if filtered
+                    if self.container_include and not any(pattern in container_name for pattern in self.container_include):
+                        continue
+                    if self.container_exclude and any(pattern in container_name for pattern in self.container_exclude):
+                        continue
+                    
+                    tags = base_tags.copy()
                     tags.update({
                         "container_id": container_id,
                         "container_name": container_name,
                     })
-                    metrics.append(Metric("docker_disk_usage_container_size_rw", timestamp, size_rw, tags))
-                    metrics.append(Metric("docker_disk_usage_container_size_root_fs", timestamp, size_root_fs, tags))
+                    
+                    metrics.append(Metric(
+                        name="docker_container_size",
+                        value=container.get('SizeRw', 0),
+                        labels=tags,
+                        timestamp=timestamp
+                    ))
                 except Exception as e:
-                    print(f"[docker] Error collecting disk usage for container {container.get('Id', '')}: {e}")
-                    continue
-
-            images = df.get('Images', [])
-            for image in images:
-                try:
-                    image_id = image.get('Id', 'unknown')
-                    repo_tags = image.get('RepoTags', [])
-                    image_name = repo_tags[0] if repo_tags else 'unknown'
-                    shared_size = image.get('SharedSize', 0)
-                    size = image.get('Size', 0)
-                    tags = tags_base.copy()
-                    tags.update({
-                        "image_id": image_id,
-                        "image_name": image_name,
+                    logs.append({
+                        "message": f"Error processing container disk usage: {e}",
+                        "level": "warn",
+                        "tags": {"source": "docker"}
                     })
-                    metrics.append(Metric("docker_disk_usage_image_shared_size", timestamp, shared_size, tags))
-                    metrics.append(Metric("docker_disk_usage_image_size", timestamp, size, tags))
-                except Exception as e:
-                    print(f"[docker] Error collecting disk usage for image {image.get('Id', '')}: {e}")
-                    continue
-
-            volumes = df.get('Volumes', [])
-            for volume in volumes:
-                try:
-                    volume_name = volume.get('Name', 'unknown')
-                    volume_size = volume.get('UsageData', {}).get('Size', 0)
-                    tags = tags_base.copy()
-                    tags.update({
-                        "volume_name": volume_name,
-                    })
-                    metrics.append(Metric("docker_disk_usage_volume_size", timestamp, volume_size, tags))
-                except Exception as e:
-                    print(f"[docker] Error collecting disk usage for volume {volume.get('Name', '')}: {e}")
-                    continue
-
+            
         except Exception as e:
-            print(f"[docker] Failed to get disk usage info: {e}")
-        return metrics
+            logs.append({
+                "message": f"Error collecting Docker disk usage metrics: {e}",
+                "level": "error",
+                "tags": {"source": "docker"}
+            })
+        
+        return {"metrics": metrics, "logs": logs}
 
-# The duplicate collect method using the Docker SDK has been removed as it is deprecated and replaced by the new implementation using requests_unixsocket.
+    def _collect_swarm_metrics(self, timestamp, server_version):
+        # This is a placeholder - swarm metrics require additional API calls
+        # and are only relevant if Docker is running in swarm mode
+        return {"metrics": [], "logs": []}
 
 # Expose the plugin to the collector
 def collect(config=None):
-    collector_config = config or {}
-    collector = DockerStatsCollector(collector_config)
+    collector = DockerStatsCollector(config or {})
     return collector.collect()

@@ -67,7 +67,6 @@ class Collector:
                             for item in data[plugin_metrics_key]:
                                 if isinstance(item, Metric):
                                     item.labels.update(self.tags)
-                                    print(f"[DEBUG] Accepted metric: {item.name}={item.value} tags={item.labels}")
                                     metrics_to_send.append(item)
                                     count += 1
                         if plugin_logs_key in data:

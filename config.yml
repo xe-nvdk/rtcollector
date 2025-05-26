@@ -8,11 +8,11 @@ debug: true
 once: false
 
 inputs:
-  # - linux_cpu
-  # - linux_mem
-  # - linux_disk
-  # - linux_io
-  # - linux_net
+  - linux_cpu
+  - linux_mem
+  - linux_disk
+  - linux_io
+  - linux_net
   # - macos_cpu
   # - macos_mem
   # - macos_disk
@@ -31,21 +31,14 @@ inputs:
   #     tag_env: ["JAVA_HOME", "HEAP_SIZE"]
   #     timeout: 5
   # - syslog:
-  #     server: "tcp://127.0.0.1:5514"
-  #     tls_cert: ""
-  #     tls_key: ""
-  #     socket_mode: ""
-  #     max_connections: 0
-  #     read_timeout: 0
-  #     read_buffer_size: "64KiB"
-  #     keep_alive_period: "5m"
-  #     content_encoding: "identity"
-  #     max_decompression_size: "500MB"
-  #     framing: "octet-counting"
-  #     trailer: "LF"
-  #     best_effort: false
-  #     syslog_standard: "RFC5424"
-  #     sdparam_separator: "_"
+  #     server: "tcp://127.0.0.1:5514"  # Format: protocol://host:port (tcp:// or udp://)
+  #     #tls_cert: "/path/to/cert.pem"  # Optional: TLS certificate for secure connections
+  #     #tls_key: "/path/to/key.pem"    # Optional: TLS key for secure connections
+  #     read_timeout: 30               # Socket read timeout in seconds (0 = no timeout)
+  #     read_buffer_size: "64KiB"      # Buffer size (supports KiB, MiB, GiB suffixes)
+  #     best_effort: true              # Try simpler parsing if standard parsing fails
+  #     syslog_standard: "auto"        # Syslog standard: "RFC5424", "RFC3164", or "auto"
+  #     sdparam_separator: "_"         # Separator for structured data parameters
   # - redis:
   #     host: "127.0.0.1"
   #     port: 6379
@@ -61,15 +54,19 @@ inputs:
   #       - Connections
   #       - Uptime
   #       - Questions
-  - exec:
-      commands:
-        - "python3 /opt/scripts/report_temp.py"
-      environment:
-        - "ENV=production"
-        - "PATH=/usr/local/bin:/usr/bin"
-      timeout: 5
-      data_format: "metrics"
-      ignore_error: false
+  # - exec:
+  #     commands:
+  #       - "python3 /opt/scripts/report_temp.py"
+  #     environment:
+  #       - "ENV=production"
+  #       - "PATH=/usr/local/bin:/usr/bin"
+  #     timeout: 5
+  #     data_format: "metrics"  # or "json"
+  #     ignore_error: false
+  #     working_dir: "/opt/scripts"  # optional working directory
+  #     shell: true  # whether to use shell for command execution
+  #     max_output_size: 1048576  # limit output size (1MB)
+  #     add_hostname: true  # add hostname to metrics
   # - postgres:
   #     host: "127.0.0.1"
   #     port: 5432
@@ -94,6 +91,22 @@ inputs:
   #     response_status_code: 200
   #     response_string_match: "healthy"
   #     insecure_skip_verify: false
+  # - nginx:
+  #     status_url: "http://localhost/nginx_status"  # URL to Nginx stub_status page
+  #     timeout: 5  # Request timeout in seconds
+  #     basic_auth:  # Optional HTTP Basic Auth
+  #       username: "monitor"
+  #       password: "password123"
+  #     headers:  # Optional custom headers
+  #       X-API-Key: "secret-key"
+  # - apache:
+  #     status_url: "http://localhost/server-status?auto"  # URL to Apache server-status page with ?auto parameter
+  #     timeout: 5  # Request timeout in seconds
+  #     basic_auth:  # Optional HTTP Basic Auth
+  #       username: "monitor"
+  #       password: "password123"
+  #     headers:  # Optional custom headers
+  #       X-API-Key: "secret-key"
 
 outputs:
   - redistimeseries:

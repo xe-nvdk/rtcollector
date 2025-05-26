@@ -43,7 +43,7 @@ Because most modern observability agents:
 - 🚀 Push metrics to RedisTimeSeries with automatic key creation
 - ⚙️ Fully YAML-configurable with no code changes needed
 - 📚 Built with Python for easy customization and extension
-- 💻 Cross-platform support for MacOS and Linux systems
+- 💻 Cross-platform support for Windows, MacOS, and Linux systems
 - 🏷️ Label-based metrics with automatic host and component tagging
 - 🐞 Debug logging and one-shot execution for testing
 - 📦 Memory buffering during Redis downtime with automatic recovery
@@ -93,11 +93,17 @@ Because most modern observability agents:
 | `macos_net`    | ✅     | net stats via `netstat`  
 | `docker_stats` | ✅     | container CPU, memory, and network stats; Docker Swarm toggle via config; added logging improvements and plugin execution duration tracking  
 | `syslog`       | ✅     | receive and parse RFC5424/RFC3164 logs over TCP/UDP; supports JSON output via RedisSearch |
-| `mariadb`      | ✅     | collects server stats via `SHOW GLOBAL STATUS`; supports configurable metrics and basic auth  |
+| `mariadb`      | ✅     | collects server stats via `SHOW GLOBAL STATUS`; supports configurable metrics with direct authentication parameters  |
 | `postgres`     | ✅     | database stats, background writer metrics, replication lag monitoring  |
-| `redis`        | ✅     | Collects server stats, memory usage, CPU, clients, persistence, replication, stats, keyspace, and latency via INFO; fully configurable metrics list |
+| `redis`        | ✅     | Collects server stats, memory usage, CPU, clients, persistence, replication, stats, keyspace, and latency via INFO; requires host and port configuration with direct authentication parameters |
 | `exec`         | ✅     | run external scripts and collect metrics/logs via JSON or plaintext format (`metrics`) |
 | `http_response` | ✅     | monitor HTTP/HTTPS endpoints with response time, status code, SSL cert validation |
+| `windows_cpu`   | ✅     | CPU usage metrics for Windows systems |
+| `windows_mem`   | ✅     | memory usage metrics for Windows systems |
+| `windows_disk`  | ✅     | disk usage and I/O metrics for Windows systems |
+| `windows_net`   | ✅     | network interface metrics for Windows systems |
+| `nginx`        | ✅     | server connections, requests, and connection states |
+| `apache`       | ✅     | server status, worker metrics, and request statistics |
 
 ---
 
@@ -121,12 +127,14 @@ Because most modern observability agents:
 - [x] Add CLI (`rtcollector run --config config.yaml`)
 - [x] Debug and once mode
 - [x] macOS support
+- [x] Windows support
 - [x] Docker Support
 - [x] RedisJSON/RediSearch support for logs
+- [x] Standardized configuration for database plugins
 - [ ] Redis Streams support for realtime events
 - [x] PostgreSQL input plugin with database stats, background writer metrics, and replication monitoring
 - [x] HTTP/HTTPS check plugin for health monitoring
-- [ ] Nginx / Apache metrics via status endpoint
+- [x] Nginx / Apache metrics via status endpoint
 - [ ] SNMP input plugin for networking devices
 - [ ] JVM metrics via Jolokia
 - [ ] Filebeat-compatible input for ingesting logs
@@ -147,8 +155,13 @@ debug: true
 once: false
 
 inputs:
-  - linux_cpu
-  - linux_mem
+  # Use appropriate system plugins based on your OS
+  - linux_cpu    # For Linux systems
+  - linux_mem    # For Linux systems
+  # - windows_cpu  # For Windows systems
+  # - windows_mem  # For Windows systems
+  # - windows_disk # For Windows systems
+  # - windows_net  # For Windows systems
   - docker:
       endpoint: "unix:///var/run/docker.sock"
       gather_services: false
@@ -195,9 +208,8 @@ inputs:
   - mariadb:
       host: "localhost"
       port: 3306
-      auth:
-        user: "monitor"
-        password: "yourpassword"
+      user: "monitor"
+      password: "yourpassword"
       metrics:
         - Threads_connected
         - Connections
@@ -236,6 +248,12 @@ inputs:
       response_status_code: 200
       response_string_match: "healthy"
       insecure_skip_verify: false
+  - nginx:
+      status_url: "http://localhost/nginx_status"
+      timeout: 5  # seconds
+  - apache:
+      status_url: "http://localhost/server-status?auto"
+      timeout: 5
 
 outputs:
   - redistimeseries:
@@ -282,6 +300,12 @@ disk_usage_percent 84.3 source=exec host=atila ts=1716734400123
 ---
 
 ## 🧰 Configuration Notes
+
+### 🔑 Authentication Parameters
+
+- All input plugins requiring authentication (like `mariadb`, `redis`, `postgres`) now use direct authentication parameters at the root level of their configuration.
+- For example, MariaDB and Redis use `user` and `password` directly in their configuration block, not in a nested `auth` object.
+- This simplifies configuration and makes it more consistent across plugins.
 
 ### ⏱️ Collection and Flushing Intervals
 
@@ -363,6 +387,35 @@ Example metrics:
 - `postgres_xact_commit`: Committed transactions per database
 - `postgres_bgwriter_checkpoints_timed`: Number of scheduled checkpoints
 - `postgres_replication_lag_seconds`: Replication lag in seconds per replica
+
+### 🪟 Windows Metrics Plugins
+
+The Windows input plugins collect system metrics on Windows platforms:
+
+- **CPU Usage**: Per-core and total CPU utilization, user/system time, and interrupt time
+- **Memory**: Physical and virtual memory usage, including swap metrics
+- **Disk**: Disk space usage by volume and I/O performance statistics
+- **Network**: Interface traffic, packet counts, errors, and connection states
+
+Configuration options:
+- Simply add the plugins to your config to enable them:
+  ```yaml
+  inputs:
+    - windows_cpu
+    - windows_mem
+    - windows_disk
+    - windows_net
+  ```
+
+Requirements:
+- Windows operating system
+- Python 3.7+ with psutil library installed
+
+Example metrics:
+- `windows_cpu_percent`: CPU utilization percentage per core
+- `windows_mem_available`: Available physical memory in bytes
+- `windows_disk_percent`: Disk usage percentage by volume
+- `windows_net_bytes_sent`: Network bytes sent by interface
 
 ### 📅 Retention Policy
 

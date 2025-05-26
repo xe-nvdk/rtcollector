@@ -72,7 +72,7 @@ Because most modern observability agents:
 | `docker_stats` | ✅     | container CPU, memory, and network stats; Docker Swarm toggle via config; added logging improvements and plugin execution duration tracking  
 | `syslog`       | ✅     | receive and parse RFC5424/RFC3164 logs over TCP/UDP; supports JSON output via RedisSearch |
 | `mariadb`      | ✅     | collects server stats via `SHOW GLOBAL STATUS`; supports configurable metrics and basic auth  |
-| `postgres`     | 🧪     | connections, xact commits  |
+| `postgres`     | ✅     | database stats, background writer metrics, replication lag monitoring  |
 | `redis`        | ✅     | Collects server stats, memory usage, CPU, clients, persistence, replication, stats, keyspace, and latency via INFO; fully configurable metrics list |
 | `exec`         | ✅     | run external scripts and collect metrics/logs via JSON or plaintext format (`metrics`) |
 
@@ -101,7 +101,7 @@ Because most modern observability agents:
 - [x] Docker Support
 - [x] RedisJSON/RediSearch support for logs
 - [ ] Redis Streams support for realtime events
-- [ ] PostgreSQL input plugin (expanded)
+- [x] PostgreSQL input plugin with database stats, background writer metrics, and replication monitoring
 - [ ] HTTP/HTTPS check plugin for health monitoring
 - [ ] Nginx / Apache metrics via status endpoint
 - [ ] SNMP input plugin for networking devices
@@ -180,6 +180,17 @@ inputs:
         - Connections
         - Uptime
         - Questions
+  - postgres:
+      host: "localhost"
+      port: 5432
+      user: "postgres"
+      password: "yourpassword"
+      dbname: "postgres"
+      collect_bgwriter: true
+      collect_replication: true
+      queries:
+        - name: "postgres_active_connections"
+          sql: "SELECT COUNT(*) FROM pg_stat_activity WHERE state = 'active'"
   - exec:
       commands:
         - "python3 /opt/scripts/report_temp.py"
@@ -262,6 +273,26 @@ disk_usage_percent 84.3 source=exec host=atila ts=1716734400123
   ```
 
 - Proxy support is optional and applied only if configured.
+
+### 🐘 PostgreSQL Plugin
+
+The PostgreSQL input plugin collects metrics from PostgreSQL databases:
+
+- **Database Statistics**: Collects metrics from `pg_stat_database` for each database (connections, transactions, blocks read/hit, etc.)
+- **Background Writer**: Monitors checkpoint operations, buffer usage, and write operations from `pg_stat_bgwriter`
+- **Replication**: Tracks replication lag in seconds from `pg_stat_replication`
+
+Configuration options:
+- `host`, `port`, `user`, `password`, `dbname`: Connection parameters
+- `collect_bgwriter`: Enable/disable background writer metrics (default: true)
+- `collect_replication`: Enable/disable replication metrics (default: true)
+- `queries`: Custom SQL queries to collect additional metrics
+
+Example metrics:
+- `postgres_numbackends`: Number of active connections per database
+- `postgres_xact_commit`: Committed transactions per database
+- `postgres_bgwriter_checkpoints_timed`: Number of scheduled checkpoints
+- `postgres_replication_lag_seconds`: Replication lag in seconds per replica
 
 ### 📅 Retention Policy
 

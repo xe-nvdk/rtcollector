@@ -61,15 +61,27 @@ inputs:
   #       - Connections
   #       - Uptime
   #       - Questions
-  - exec:
-      commands:
-        - "python3 /opt/scripts/report_temp.py"
-      environment:
-        - "ENV=production"
-        - "PATH=/usr/local/bin:/usr/bin"
-      timeout: 5
-      data_format: "metrics"
-      ignore_error: false
+  # - exec:
+  #     commands:
+  #       - "python3 /opt/scripts/report_temp.py"
+  #     environment:
+  #       - "ENV=production"
+  #       - "PATH=/usr/local/bin:/usr/bin"
+  #     timeout: 5
+  #     data_format: "metrics"
+  #     ignore_error: false
+  - postgres:
+      host: "127.0.0.1"
+      port: 5432
+      user: "monitor"
+      password: "testpass"
+      dbname: "postgres"
+      # Optional: define custom queries to override default pg_stat_database
+      # queries:
+      #   - name: "connections"
+      #     sql: "SELECT COUNT(*) FROM pg_stat_activity WHERE datname = current_database();"
+      #   - name: "uptime"
+      #     sql: "SELECT EXTRACT(EPOCH FROM now() - pg_postmaster_start_time())::bigint;"
 
 outputs:
   - redistimeseries:

@@ -8,18 +8,14 @@ _last_cpu_times = {}
 def collect(config=None):
     # Verify we're on Linux
     if platform.system() != "Linux":
-        return {
-            "linux_cpu_logs": [{
-                "message": "linux_cpu plugin can only run on Linux systems",
-                "level": "error",
-                "tags": {"source": "linux_cpu"}
-            }]
-        }
+        print("[linux_cpu] This plugin only works on Linux")
+        return []
     
     metrics = []
-    logs = []
     timestamp = int(time.time() * 1000)
     hostname = socket.gethostname()
+    
+    print("[linux_cpu] Starting CPU metrics collection")
     
     try:
         current = _read_proc_stat()
@@ -32,37 +28,34 @@ def collect(config=None):
         
         for cpu_id in current:
             if cpu_id not in _last_cpu_times:
-                logs.append({
-                    "message": f"Skipping uninitialized core: {cpu_id}",
-                    "level": "warn",
-                    "tags": {"source": "linux_cpu", "core": cpu_id}
-                })
+                print(f"[linux_cpu] Skipping uninitialized core: {cpu_id}")
                 continue
             
             fields = _calculate_fields(_last_cpu_times[cpu_id], current[cpu_id])
             core_label = "cpu-total" if cpu_id == "cpu" else cpu_id
             
             for k, v in fields.items():
+                # Use consistent naming convention with cpu_usage_ prefix
+                base_metric_name = f"cpu_usage_{k}"
+                
+                # Create a unique key for each core by including the core in the name
+                metric_name = f"{base_metric_name}_{core_label}"
+                
                 metrics.append(Metric(
-                    name=f"cpu_{k}",
+                    name=metric_name,
                     value=v,
                     timestamp=timestamp,
                     labels={"source": "linux_cpu", "core": core_label, "host": hostname}
                 ))
+                print(f"[linux_cpu] Added metric: {metric_name}, core: {core_label}, value: {v:.2f}")
         
         _last_cpu_times = current
         
     except Exception as e:
-        logs.append({
-            "message": f"Error collecting Linux CPU metrics: {e}",
-            "level": "error",
-            "tags": {"source": "linux_cpu"}
-        })
+        print(f"[linux_cpu] Error collecting Linux CPU metrics: {e}")
     
-    return {
-        "linux_cpu_metrics": metrics,
-        "linux_cpu_logs": logs
-    }
+    print(f"[linux_cpu] Collected {len(metrics)} CPU metrics")
+    return metrics
 
 def _read_proc_stat():
     cpu_stats = {}
@@ -75,6 +68,7 @@ def _read_proc_stat():
                 cpu_id = parts[0]  # e.g., 'cpu', 'cpu0', 'cpu1'
                 values = list(map(int, parts[1:]))
                 cpu_stats[cpu_id] = values
+                print(f"[linux_cpu] Found CPU: {cpu_id} with values: {values[:4]}...")
     except Exception as e:
         print(f"[linux_cpu] Error reading /proc/stat: {e}")
     return cpu_stats

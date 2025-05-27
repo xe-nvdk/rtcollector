@@ -104,6 +104,10 @@ Because most modern observability agents:
 | `windows_net`   | ✅     | network interface metrics for Windows systems |
 | `nginx`        | ✅     | server connections, requests, and connection states |
 | `apache`       | ✅     | server status, worker metrics, and request statistics |
+| `system`       | ✅     | system load averages, uptime, number of users, and CPU count |
+| `processes`    | ✅     | process counts, threads, and states (running, sleeping, zombie) |
+| `kernel`      | ✅     | kernel metrics including boot time, context switches, interrupts, and pressure stall information |
+| `netstat`     | ✅     | TCP connection states (established, time_wait, close_wait, etc.) for IPv4 and IPv6 |
 
 ---
 
@@ -156,6 +160,7 @@ once: false
 
 inputs:
   # Use appropriate system plugins based on your OS
+  - system       # Cross-platform system metrics (load, uptime, users)
   - linux_cpu    # For Linux systems
   - linux_mem    # For Linux systems
   # - windows_cpu  # For Windows systems
@@ -387,6 +392,160 @@ Example metrics:
 - `postgres_xact_commit`: Committed transactions per database
 - `postgres_bgwriter_checkpoints_timed`: Number of scheduled checkpoints
 - `postgres_replication_lag_seconds`: Replication lag in seconds per replica
+
+### 🔄 Processes Plugin
+
+The Processes input plugin collects metrics about system processes:
+
+- **Process Counts**: Total number of processes on the system
+- **Thread Counts**: Total number of threads across all processes
+- **Process States**: Counts of processes in different states (running, sleeping, zombie, blocked, etc.)
+
+Configuration options:
+- Simply add the plugin to your config to enable it:
+  ```yaml
+  inputs:
+    - processes
+  ```
+
+Example metrics:
+- `processes_total`: Total number of processes
+- `processes_total_threads`: Total number of threads
+- `processes_running`: Number of running processes
+- `processes_sleeping`: Number of sleeping processes
+- `processes_zombie`: Number of zombie processes
+- `processes_blocked`: Number of processes in uninterruptible sleep (Linux)
+- `processes_stopped`: Number of stopped processes
+- `processes_dead`: Number of dead processes (Linux)
+- `processes_paging`: Number of paging processes (Linux)
+- `processes_parked`: Number of parked processes (Linux 4+)
+- `processes_idle`: Number of idle processes (BSD/Linux 4+)
+
+Implementation:
+- Uses native OS interfaces (/proc filesystem on Linux, ps command on macOS, wmic on Windows)
+- No external dependencies required
+
+### 🌐 Netstat Plugin
+
+The Netstat input plugin collects TCP connection state metrics and TCP statistics:
+
+- **TCP Connection States**: Counts of connections in each state (ESTABLISHED, TIME_WAIT, CLOSE_WAIT, etc.)
+- **IPv4 and IPv6**: Collects metrics from both IPv4 and IPv6 connections
+- **TCP Handshake Metrics**: Active/passive opens, connection failures, resets
+- **TCP Performance Metrics**: Retransmissions, errors, and other TCP statistics
+- **Rate Calculations**: Per-second rates for counter metrics (with `_rate` suffix)
+
+Configuration options:
+- Simply add the plugin to your config to enable it:
+  ```yaml
+  inputs:
+    - netstat
+  ```
+
+Example metrics:
+- **Connection States**:
+  - `tcp_established`: Number of connections in ESTABLISHED state
+  - `tcp_time_wait`: Number of connections in TIME_WAIT state
+  - `tcp_close_wait`: Number of connections in CLOSE_WAIT state
+  - `tcp_syn_sent`: Number of connections in SYN_SENT state
+  - `tcp_syn_recv`: Number of connections in SYN_RECV state
+  - `tcp_fin_wait1`: Number of connections in FIN_WAIT1 state
+  - `tcp_fin_wait2`: Number of connections in FIN_WAIT2 state
+  - `tcp_close`: Number of connections in CLOSE state
+  - `tcp_last_ack`: Number of connections in LAST_ACK state
+  - `tcp_listen`: Number of connections in LISTEN state
+  - `tcp_closing`: Number of connections in CLOSING state
+
+- **TCP Statistics**:
+  - `tcp_active_opens`: Total number of active connection openings since boot
+  - `tcp_active_opens_rate`: Active connection openings per second
+  - `tcp_passive_opens`: Total number of passive connection openings since boot
+  - `tcp_passive_opens_rate`: Passive connection openings per second
+  - `tcp_attempt_fails`: Total number of failed connection attempts since boot
+  - `tcp_attempt_fails_rate`: Failed connection attempts per second
+  - `tcp_estab_resets`: Total number of connection resets received since boot
+  - `tcp_estab_resets_rate`: Connection resets received per second
+  - `tcp_curr_estab`: Current number of connections in ESTABLISHED or CLOSE_WAIT state
+  - `tcp_in_segs`: Total number of segments received since boot
+  - `tcp_in_segs_rate`: Segments received per second
+  - `tcp_out_segs`: Total number of segments sent since boot
+  - `tcp_out_segs_rate`: Segments sent per second
+  - `tcp_retrans_segs`: Total number of segments retransmitted since boot
+  - `tcp_retrans_segs_rate`: Segments retransmitted per second
+  - `tcp_in_errs`: Total number of bad segments received since boot
+  - `tcp_in_errs_rate`: Bad segments received per second
+  - `tcp_out_rsts`: Total number of resets sent since boot
+  - `tcp_out_rsts_rate`: Resets sent per second
+  - `tcp_syn_retrans`: Total number of SYN retransmissions since boot
+  - `tcp_syn_retrans_rate`: SYN retransmissions per second
+
+- **TCP Handshake and Advanced Metrics**:
+  - `tcp_syncookies_sent`: Number of SYN cookies sent
+  - `tcp_syncookies_recv`: Number of SYN cookies received
+  - `tcp_syncookies_failed`: Number of invalid SYN cookies received
+  - `tcp_embryonic_rsts`: Number of resets received for embryonic SYN_RECV sockets
+  - `tcp_listen_overflows`: Number of times the listen queue overflowed
+  - `tcp_listen_drops`: Number of SYNs to LISTEN sockets dropped
+  - And many more detailed TCP metrics
+
+Requirements:
+- Linux operating system with /proc/net/tcp, /proc/net/tcp6, /proc/net/snmp, and /proc/net/netstat files
+
+### 🧠 Kernel Plugin
+
+The Kernel input plugin collects metrics about the Linux kernel:
+
+- **Core Metrics**: Boot time, context switches, interrupts, processes forked
+- **Memory Management**: Disk pages in/out, entropy available
+- **KSM (Kernel Samepage Merging)**: Various KSM metrics if available
+- **PSI (Pressure Stall Information)**: CPU, memory, and I/O pressure metrics
+
+Configuration options:
+- Simply add the plugin to your config to enable it:
+  ```yaml
+  inputs:
+    - kernel
+  ```
+
+Example metrics:
+- `kernel_boot_time`: System boot time in seconds since epoch
+- `kernel_context_switches`: Number of context switches
+- `kernel_interrupts`: Number of interrupts
+- `kernel_processes_forked`: Number of processes forked
+- `kernel_disk_pages_in`: Number of disk pages paged in
+- `kernel_disk_pages_out`: Number of disk pages paged out
+- `kernel_entropy_avail`: Available entropy
+- `kernel_pressure_avg10`, `kernel_pressure_avg60`, `kernel_pressure_avg300`: Pressure metrics for CPU, memory, and I/O
+- `kernel_fd_allocated`: Number of allocated file descriptors
+- `kernel_fd_used`: Number of used file descriptors
+- `kernel_fd_max`: Maximum number of file descriptors allowed
+- `kernel_fd_used_percent`: Percentage of file descriptors used
+
+Requirements:
+- Linux operating system
+
+### 🖥️ System Plugin
+
+The System input plugin collects general system metrics:
+
+- **Load Averages**: 1, 5, and 15-minute load averages
+- **Users**: Number of logged-in users and unique users
+- **CPUs**: Number of CPU cores/processors
+- **Uptime**: System uptime in seconds
+
+Configuration options:
+- Simply add the plugin to your config to enable it:
+  ```yaml
+  inputs:
+    - system
+  ```
+
+Example metrics:
+- `system_load1`, `system_load5`, `system_load15`: System load averages
+- `system_n_users`: Number of logged-in users
+- `system_n_unique_users`: Number of unique logged-in users
+- `system_n_cpus`: Number of CPU cores
+- `system_uptime`: System uptime in seconds
 
 ### 🪟 Windows Metrics Plugins
 

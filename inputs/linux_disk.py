@@ -15,6 +15,7 @@ def collect(config=None):
             }]
         }
     
+    print("[linux_disk] Starting disk metrics collection")
     metrics = []
     logs = []
     timestamp = int(time.time() * 1000)
@@ -35,6 +36,10 @@ def collect(config=None):
                 available = stats.f_bavail * stats.f_frsize  # Available to non-root users
                 used = total - free
                 used_percent = (used / total) * 100 if total > 0 else 0
+                
+                # Debug output
+                print(f"[linux_disk] Mount: {mount}, Total: {total}, Used: {used}, Free: {free}")
+                print(f"[linux_disk] Used percent calculation: {used}/{total} = {used_percent:.2f}%")
                 
                 # Calculate inodes metrics
                 inodes_total = stats.f_files
@@ -77,34 +82,86 @@ def collect(config=None):
             "tags": {"source": "linux_disk"}
         })
     
-    return {
-        "linux_disk_metrics": metrics,
-        "linux_disk_logs": logs
-    }
+    # Convert metrics to standard format
+    standard_metrics = []
+    for metric in metrics:
+        # Remove the linux_ prefix from metric names for consistency
+        if metric.name.startswith("disk_"):
+            standard_metrics.append(metric)
+        else:
+            # Create a copy with modified name
+            standard_metrics.append(
+                Metric(
+                    name=metric.name.replace("linux_disk_", "disk_") if metric.name.startswith("linux_disk_") else metric.name,
+                    value=metric.value,
+                    timestamp=metric.timestamp,
+                    labels=metric.labels
+                )
+            )
+    
+    print(f"[linux_disk] Collected {len(standard_metrics)} disk metrics")
+    
+    return standard_metrics
 
 def get_mount_points():
     """Get list of mount points to monitor, excluding virtual filesystems"""
     mount_points = []
     try:
-        with open("/proc/mounts", "r") as f:
-            for line in f:
-                parts = line.split()
-                if len(parts) < 3:
-                    continue
-                    
-                device, mount_point, fstype = parts[0], parts[1], parts[2]
+        # First try to use df command output which is more reliable for actual disk usage
+        import subprocess
+        df_output = subprocess.check_output(["df", "-P"], universal_newlines=True)
+        lines = df_output.strip().split('\n')
+        
+        # Skip header line
+        for line in lines[1:]:
+            parts = line.split()
+            if len(parts) < 6:
+                continue
                 
-                # Skip virtual filesystems and special mounts
-                if fstype in ["tmpfs", "proc", "sysfs", "devtmpfs", "devpts", "securityfs", 
-                             "cgroup", "pstore", "debugfs", "configfs", "selinuxfs"]:
-                    continue
-                    
-                # Skip bind mounts and virtual devices
-                if device.startswith("/dev/loop") or device == "none":
-                    continue
-                    
-                mount_points.append(mount_point)
+            device, size, used, avail, percent, mount_point = parts
+            
+            # Skip pseudo filesystems
+            if device in ["none", "tmpfs", "devtmpfs"] or device.startswith("udev"):
+                continue
+                
+            # Skip bind mounts and virtual devices
+            if device.startswith("/dev/loop"):
+                continue
+                
+            print(f"[linux_disk] Found mount point: {mount_point}, device: {device}, usage: {percent}")
+            mount_points.append(mount_point)
+            
     except Exception as e:
-        print(f"[linux_disk] Error reading mount points: {e}")
+        print(f"[linux_disk] Error using df command: {e}, falling back to /proc/mounts")
+        
+        # Fallback to /proc/mounts
+        try:
+            with open("/proc/mounts", "r") as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) < 3:
+                        continue
+                        
+                    device, mount_point, fstype = parts[0], parts[1], parts[2]
+                    
+                    # Skip virtual filesystems and special mounts
+                    if fstype in ["tmpfs", "proc", "sysfs", "devtmpfs", "devpts", "securityfs", 
+                                "cgroup", "pstore", "debugfs", "configfs", "selinuxfs"]:
+                        continue
+                        
+                    # Skip bind mounts and virtual devices
+                    if device.startswith("/dev/loop") or device == "none":
+                        continue
+                        
+                    print(f"[linux_disk] Found mount point from /proc/mounts: {mount_point}, device: {device}, fstype: {fstype}")
+                    mount_points.append(mount_point)
+        except Exception as e:
+            print(f"[linux_disk] Error reading mount points from /proc/mounts: {e}")
+    
+    if not mount_points:
+        # Last resort - at least check root filesystem
+        if os.path.exists("/"):
+            print("[linux_disk] No mount points found, adding root (/) as fallback")
+            mount_points.append("/")
     
     return mount_points

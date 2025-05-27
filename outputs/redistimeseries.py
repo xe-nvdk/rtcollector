@@ -25,24 +25,60 @@ class Redistimeseries:
         else:
             self.hostname = socket.gethostname()
         self.created_keys = set()
+        
+        # Create indexes for common labels
+        self._create_indexes()
 
+    def _create_indexes(self):
+        """Ensure labels are indexed for efficient querying."""
+        # In RedisTimeSeries, labels are automatically indexed when used in TS.CREATE
+        # We just need to make sure we're consistently using the same labels
+        print("[Redistimeseries] Labels are automatically indexed in RedisTimeSeries")
+        
+        # For debugging, let's check if we can query by labels
+        try:
+            result = self.r.execute_command("TS.QUERYINDEX", "host=*")
+            print(f"[Redistimeseries] Host index test: {result}")
+        except Exception as e:
+            print(f"[Redistimeseries] Note: TS.QUERYINDEX test failed: {e}")
+            print("[Redistimeseries] This is expected if no metrics have been collected yet")
+    
     def write(self, metrics):
         pipe = self.r.pipeline()
         for m in metrics:
             key = m.name
             if key not in self.created_keys:
                 try:
-                    labels = m.labels.copy()
-                    labels["host"] = self.hostname
+                    # Ensure labels are properly formatted
+                    labels = m.labels.copy() if m.labels else {}
+                    
+                    # Always set host label
+                    if "host" not in labels:
+                        labels["host"] = self.hostname
+                    
+                    # Format labels for TS.CREATE
                     label_args = []
                     for k, v in labels.items():
-                        label_args.extend([k, v])
+                        label_args.extend([k, str(v)])
+                    
+                    # Create the time series with labels
+                    print(f"[Redistimeseries] Creating key {key} with labels: {labels}")
                     self.r.execute_command(
                         "TS.CREATE", key,
                         "RETENTION", str(self.retention),
                         "DUPLICATE_POLICY", "LAST",
                         "LABELS", *label_args
                     )
+                    
+                    # Explicitly create an index for this key's labels
+                    for label_key, label_value in labels.items():
+                        try:
+                            index_query = f"{label_key}={label_value}"
+                            self.r.execute_command("TS.QUERYINDEX", index_query)
+                            print(f"[Redistimeseries] Verified index for {index_query}")
+                        except Exception as e:
+                            print(f"[Redistimeseries] Note: Index verification for {label_key}={label_value} failed: {e}")
+                            
                 except redis.exceptions.ResponseError as e:
                     if "already exists" not in str(e):
                         print(f"[Redistimeseries] TS.CREATE failed: {e}")

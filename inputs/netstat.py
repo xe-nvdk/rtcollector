@@ -2,11 +2,8 @@ import time
 import socket
 import os
 from core.metric import Metric
-
-# Store previous values for rate calculations
-_last_tcp_stats = {}
-_last_tcp_ext_metrics = {}
-_last_timestamp = 0
+from utils.metrics import calculate_rate, create_key
+from utils.debug import debug_log
 
 def collect(config=None):
     """Collect TCP connection state metrics and TCP statistics."""
@@ -75,7 +72,6 @@ def collect(config=None):
     
     # Collect TCP handshake metrics from /proc/net/netstat
     try:
-        global _last_tcp_ext_metrics
         
         tcp_ext_metrics = {}
         with open('/proc/net/netstat', 'r') as f:
@@ -219,44 +215,34 @@ def collect(config=None):
             'TCPWqueueTooBig': 'tcp_wqueue_too_big'
         }
         
-        # Add raw counter metrics
+        # Process each metric
         for key, metric_name in tcp_handshake_metrics.items():
             if key in tcp_ext_metrics:
+                # Add raw counter metric
+                raw_value = tcp_ext_metrics[key]
                 metrics.append(Metric(
                     name=f"tcp_{metric_name}",
-                    value=tcp_ext_metrics[key],
+                    value=raw_value,
                     timestamp=timestamp,
                     labels=labels
                 ))
-        
-        # Calculate rates if we have previous values
-        if _last_timestamp > 0 and _last_tcp_ext_metrics:
-            time_diff_sec = (timestamp - _last_timestamp) / 1000.0
-            if time_diff_sec > 0:  # Avoid division by zero
-                for key, metric_name in tcp_handshake_metrics.items():
-                    if key in tcp_ext_metrics and key in _last_tcp_ext_metrics:
-                        # Calculate rate (per second)
-                        value_diff = tcp_ext_metrics[key] - _last_tcp_ext_metrics[key]
-                        if value_diff >= 0:  # Ignore negative values (counter reset)
-                            rate = value_diff / time_diff_sec
-                            metrics.append(Metric(
-                                name=f"tcp_{metric_name}_rate",
-                                value=rate,
-                                timestamp=timestamp,
-                                labels=labels
-                            ))
-                        else:
-                            # Handle counter reset (system reboot)
-                            print(f"[netstat] Counter reset detected for {key}, skipping rate calculation")
-        
-        # Store current values for next time
-        _last_tcp_ext_metrics = tcp_ext_metrics.copy()
+                
+                # Calculate rate using utility function
+                metric_key = create_key(f"tcp_{metric_name}", labels)
+                rate = calculate_rate(metric_key, raw_value, timestamp)
+                
+                if rate is not None:
+                    metrics.append(Metric(
+                        name=f"tcp_{metric_name}_rate",
+                        value=rate,
+                        timestamp=timestamp,
+                        labels=labels
+                    ))
     except Exception as e:
         print(f"[netstat] Error reading TCP handshake metrics: {e}")
     
     # Collect TCP stats from /proc/net/snmp
     try:
-        global _last_tcp_stats, _last_timestamp
         
         tcp_stats = {}
         with open('/proc/net/snmp', 'r') as f:
@@ -286,45 +272,35 @@ def collect(config=None):
             'InCsumErrors': 'in_csum_errors'
         }
         
-        # Add raw counter metrics
+        # Process each metric
         for key, metric_name in tcp_metrics.items():
             if key in tcp_stats:
+                # Add raw counter metric
+                raw_value = tcp_stats[key]
                 metrics.append(Metric(
                     name=f"tcp_{metric_name}",
-                    value=tcp_stats[key],
+                    value=raw_value,
                     timestamp=timestamp,
                     labels=labels
                 ))
-        
-        # Calculate rates if we have previous values
-        if _last_timestamp > 0 and _last_tcp_stats:
-            time_diff_sec = (timestamp - _last_timestamp) / 1000.0
-            if time_diff_sec > 0:  # Avoid division by zero
-                for key, metric_name in tcp_metrics.items():
-                    if key in tcp_stats and key in _last_tcp_stats:
-                        # Skip CurrEstab as it's not a counter
-                        if key == 'CurrEstab':
-                            continue
-                            
-                        # Calculate rate (per second)
-                        value_diff = tcp_stats[key] - _last_tcp_stats[key]
-                        if value_diff >= 0:  # Ignore negative values (counter reset)
-                            rate = value_diff / time_diff_sec
-                            metrics.append(Metric(
-                                name=f"tcp_{metric_name}_rate",
-                                value=rate,
-                                timestamp=timestamp,
-                                labels=labels
-                            ))
-                        else:
-                            # Handle counter reset (system reboot)
-                            print(f"[netstat] Counter reset detected for {key}, skipping rate calculation")
-        
-        # Store current values for next time
-        _last_tcp_stats = tcp_stats.copy()
-        _last_timestamp = timestamp
+                
+                # Skip rate calculation for non-counter metrics
+                if key == 'CurrEstab':
+                    continue
+                
+                # Calculate rate using utility function
+                metric_key = create_key(f"tcp_{metric_name}", labels)
+                rate = calculate_rate(metric_key, raw_value, timestamp)
+                
+                if rate is not None:
+                    metrics.append(Metric(
+                        name=f"tcp_{metric_name}_rate",
+                        value=rate,
+                        timestamp=timestamp,
+                        labels=labels
+                    ))
     except Exception as e:
         print(f"[netstat] Error reading TCP stats: {e}")
     
-    print(f"[netstat] Collected {len(metrics)} TCP metrics")
+    # Debug logging removed for brevity
     return metrics

@@ -4,19 +4,33 @@ max_buffer_size: 5000        # Maximum number of entries to buffer if Redis is u
 warn_on_buffer: true
 hostname: ''
 
-debug: true
+debug: false
 once: false
 
 inputs:
   - linux_cpu
   - linux_mem
-  - linux_disk
-  - linux_io
-  - linux_net
+  - linux_disk:
+      exclude_mounts: []
+      include_mounts: []  # Leave empty to include all mount points
+  - linux_io:
+      exclude_devices: []
+      include_devices: []  # Leave empty to include all devices
+  - linux_net:
+      exclude_patterns:
+        - "veth"
+        - "docker"
+        - "^br-"
+      include_patterns: []
+      exclude_interfaces: []
+      include_interfaces:
+        - "wlp0s20f3"  # Always include this interface
+  - linux_swap
   - system
   - processes
   - kernel
   - netstat
+  - nstat
   # - macos_cpu
   # - macos_mem
   # - macos_disk

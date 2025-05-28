@@ -2,10 +2,34 @@ import socket
 import time
 import platform
 from core.metric import Metric
+from utils.metrics import calculate_rate, create_key
+from utils.debug import debug_log
 
 # Store previous stats for delta calculations
 _last_stats = {}
 _last_time = 0
+
+def _get_disk_devices():
+    """Get a list of all disk devices from /proc/diskstats"""
+    devices = []
+    try:
+        with open("/proc/diskstats", "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) < 14:
+                    continue
+                    
+                # Get device name
+                dev = parts[2]
+                
+                # Skip certain virtual devices
+                if dev.startswith(('loop', 'ram')):
+                    continue
+                    
+                devices.append(dev)
+    except Exception as e:
+        print(f"[linux_io] Error reading disk devices: {e}")  # Keep this as regular print for errors
+    return devices
 
 def collect(config=None):
     # Verify we're on Linux
@@ -18,14 +42,48 @@ def collect(config=None):
             }]
         }
     
+    # Get configuration
+    if config is None:
+        config = {}
+    
+    # Get device filtering options
+    exclude_devices = config.get('exclude_devices', [])
+    include_devices = config.get('include_devices', [])
+    
     metrics = []
     logs = []
     timestamp = int(time.time() * 1000)
     hostname = socket.gethostname()
     
+    # Create discovery metrics for all disk devices
+    try:
+        all_devices = _get_disk_devices()
+        for dev in all_devices:
+            # Skip excluded devices
+            if exclude_devices and dev in exclude_devices:
+                continue
+                
+            # Skip devices not in include_devices if specified
+            if include_devices and dev not in include_devices and len(include_devices) > 0:
+                continue
+                
+            # Add discovery metric for this device
+            metrics.append(Metric(
+                name=f"diskio_device_{dev}",
+                value=1,  # Just a placeholder value
+                timestamp=timestamp,
+                labels={"host": hostname, "device": dev}
+            ))
+    except Exception as e:
+        logs.append({
+            "message": f"Error creating disk device discovery metrics: {e}",
+            "level": "error",
+            "tags": {"source": "linux_io"}
+        })
+    
     try:
         # Read current disk stats
-        current_stats = _read_diskstats()
+        current_stats = _read_diskstats(config)
         current_time = time.time()
         
         global _last_stats, _last_time
@@ -55,6 +113,16 @@ def collect(config=None):
             if dev not in _last_stats:
                 continue
                 
+            # Skip excluded devices
+            if exclude_devices and dev in exclude_devices:
+                continue
+                
+            # Skip devices not in include_devices if specified
+            if include_devices and dev not in include_devices and len(include_devices) > 0:
+                continue
+            
+            # Debug logging for read metrics - removed for brevity
+                
             # Calculate deltas
             delta_reads = vals["reads"] - _last_stats[dev]["reads"]
             delta_writes = vals["writes"] - _last_stats[dev]["writes"]
@@ -74,11 +142,17 @@ def collect(config=None):
             read_bytes_per_sec = read_bytes / time_delta
             write_bytes_per_sec = write_bytes / time_delta
             
+            # Calculate read and write time rates (ms per second)
+            read_time_rate = delta_read_time / time_delta
+            write_time_rate = delta_write_time / time_delta
+            
             # Calculate IO utilization (percentage of time the device was busy)
             io_util_percent = min(100.0, (delta_io_time / (time_delta * 1000)) * 100)
             
             # Common labels
             labels = {"source": "linux_io", "device": dev, "host": hostname}
+            
+            # Debug logging for calculated values - removed for brevity
             
             # Add metrics
             metrics.extend([
@@ -98,6 +172,15 @@ def collect(config=None):
                 Metric(name="io_read_time_ms", value=delta_read_time, timestamp=timestamp, labels=labels),
                 Metric(name="io_write_time_ms", value=delta_write_time, timestamp=timestamp, labels=labels),
                 Metric(name="io_util_percent", value=io_util_percent, timestamp=timestamp, labels=labels),
+                
+                # Device-specific metrics with device name in the key
+                Metric(name=f"diskio_reads_rate_{dev}", value=reads_per_sec, timestamp=timestamp, labels=labels),
+                Metric(name=f"diskio_writes_rate_{dev}", value=writes_per_sec, timestamp=timestamp, labels=labels),
+                Metric(name=f"diskio_read_bytes_rate_{dev}", value=read_bytes_per_sec, timestamp=timestamp, labels=labels),
+                Metric(name=f"diskio_write_bytes_rate_{dev}", value=write_bytes_per_sec, timestamp=timestamp, labels=labels),
+                Metric(name=f"diskio_read_time_rate_{dev}", value=read_time_rate, timestamp=timestamp, labels=labels),
+                Metric(name=f"diskio_write_time_rate_{dev}", value=write_time_rate, timestamp=timestamp, labels=labels),
+                Metric(name=f"diskio_util_percent_{dev}", value=io_util_percent, timestamp=timestamp, labels=labels),
             ])
         
         # Update last stats for next collection
@@ -116,7 +199,7 @@ def collect(config=None):
         "linux_io_logs": logs
     }
 
-def _read_diskstats():
+def _read_diskstats(config=None):
     """Read and parse /proc/diskstats"""
     stats = {}
     try:
@@ -126,9 +209,13 @@ def _read_diskstats():
                 if len(parts) < 14:
                     continue
                     
-                # Skip partitions (we only want whole disks)
+                # Get device name
                 dev = parts[2]
-                if dev.startswith(('loop', 'ram', 'dm-')):
+                
+                # Debug logging for the first few devices - removed for brevity
+                
+                # Skip certain virtual devices but keep common disk types
+                if dev.startswith(('loop', 'ram')):
                     continue
                     
                 # Extract values from diskstats
@@ -147,5 +234,5 @@ def _read_diskstats():
                     "io_weighted_time": int(parts[13]),      # Field 11: weighted time spent doing I/Os (ms)
                 }
     except Exception as e:
-        print(f"[linux_io] Error reading /proc/diskstats: {e}")
+        print(f"[linux_io] Error reading /proc/diskstats: {e}")  # Keep this as regular print for errors
     return stats

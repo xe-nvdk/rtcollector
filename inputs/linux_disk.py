@@ -3,6 +3,8 @@ import time
 import socket
 import platform
 from core.metric import Metric
+from utils.metrics import calculate_rate, create_key
+from utils.debug import debug_log
 
 def collect(config=None):
     # Verify we're on Linux
@@ -15,7 +17,15 @@ def collect(config=None):
             }]
         }
     
-    print("[linux_disk] Starting disk metrics collection")
+    # Get configuration
+    if config is None:
+        config = {}
+    
+    # Get mount point filtering options
+    exclude_mounts = config.get('exclude_mounts', [])
+    include_mounts = config.get('include_mounts', [])
+    
+    # Debug logging removed for brevity
     metrics = []
     logs = []
     timestamp = int(time.time() * 1000)
@@ -23,10 +33,35 @@ def collect(config=None):
     
     try:
         # Get mount points to monitor
-        mount_points = get_mount_points()
+        mount_points = get_mount_points(config)
+        
+        # Create discovery metrics for all mount points
+        for mount in mount_points:
+            # Skip excluded mount points
+            if exclude_mounts and mount in exclude_mounts:
+                continue
+                
+            # Skip mount points not in include_mounts if specified
+            if include_mounts and mount not in include_mounts and len(include_mounts) > 0:
+                continue
+                
+            # Add discovery metric for this mount point
+            metrics.append(Metric(
+                name=f"disk_mountpoint_{mount.replace('/', '_').strip('_')}",
+                value=1,  # Just a placeholder value
+                timestamp=timestamp,
+                labels={"host": hostname, "mountpoint": mount}
+            ))
         
         # Collect disk usage metrics for each mount point
         for mount in mount_points:
+            # Skip excluded mount points
+            if exclude_mounts and mount in exclude_mounts:
+                continue
+                
+            # Skip mount points not in include_mounts if specified
+            if include_mounts and mount not in include_mounts and len(include_mounts) > 0:
+                continue
             try:
                 stats = os.statvfs(mount)
                 
@@ -38,8 +73,7 @@ def collect(config=None):
                 used_percent = (used / total) * 100 if total > 0 else 0
                 
                 # Debug output
-                print(f"[linux_disk] Mount: {mount}, Total: {total}, Used: {used}, Free: {free}")
-                print(f"[linux_disk] Used percent calculation: {used}/{total} = {used_percent:.2f}%")
+                # Only log detailed metrics in debug mode
                 
                 # Calculate inodes metrics
                 inodes_total = stats.f_files
@@ -47,8 +81,8 @@ def collect(config=None):
                 inodes_used = inodes_total - inodes_free
                 inodes_percent = (inodes_used / inodes_total) * 100 if inodes_total > 0 else 0
                 
-                # Common labels
-                labels = {"source": "linux_disk", "mount": mount, "host": hostname}
+                # Common labels - include both "mount" and "path" for compatibility
+                labels = {"source": "linux_disk", "mount": mount, "path": mount, "host": hostname}
                 
                 # Add disk space metrics
                 metrics.extend([
@@ -59,12 +93,37 @@ def collect(config=None):
                     Metric(name="disk_used_percent", value=used_percent, timestamp=timestamp, labels=labels),
                 ])
                 
+                # Add mount-specific metrics with mount point in the key
+                # Replace slashes with underscores for valid metric names
+                mount_key = mount.replace('/', '_').strip('_')
+                if not mount_key:
+                    mount_key = "root"  # For root directory
+                    
+                metrics.extend([
+                    Metric(name=f"disk_total_{mount_key}", value=total, timestamp=timestamp, labels=labels),
+                    Metric(name=f"disk_used_{mount_key}", value=used, timestamp=timestamp, labels=labels),
+                    Metric(name=f"disk_free_{mount_key}", value=free, timestamp=timestamp, labels=labels),
+                    Metric(name=f"disk_used_percent_{mount_key}", value=used_percent, timestamp=timestamp, labels=labels),
+                ])
+                
                 # Add inode metrics
                 metrics.extend([
                     Metric(name="disk_inodes_total", value=inodes_total, timestamp=timestamp, labels=labels),
                     Metric(name="disk_inodes_used", value=inodes_used, timestamp=timestamp, labels=labels),
                     Metric(name="disk_inodes_free", value=inodes_free, timestamp=timestamp, labels=labels),
                     Metric(name="disk_inodes_percent", value=inodes_percent, timestamp=timestamp, labels=labels),
+                ])
+                
+                # Add mount-specific inode metrics with mount point in the key
+                metrics.extend([
+                    Metric(name=f"disk_inodes_total_{mount_key}", value=inodes_total, timestamp=timestamp, labels=labels),
+                    Metric(name=f"disk_inodes_used_{mount_key}", value=inodes_used, timestamp=timestamp, labels=labels),
+                    Metric(name=f"disk_inodes_free_{mount_key}", value=inodes_free, timestamp=timestamp, labels=labels),
+                    Metric(name=f"disk_inodes_percent_{mount_key}", value=inodes_percent, timestamp=timestamp, labels=labels),
+                    # Add direct key names for easier ts.range queries
+                    Metric(name=f"inodes_total_{mount_key}", value=inodes_total, timestamp=timestamp, labels=labels),
+                    Metric(name=f"inodes_used_{mount_key}", value=inodes_used, timestamp=timestamp, labels=labels),
+                    Metric(name=f"inodes_free_{mount_key}", value=inodes_free, timestamp=timestamp, labels=labels),
                 ])
                 
             except Exception as e:
@@ -99,11 +158,11 @@ def collect(config=None):
                 )
             )
     
-    print(f"[linux_disk] Collected {len(standard_metrics)} disk metrics")
+    # Debug logging removed for brevity
     
     return standard_metrics
 
-def get_mount_points():
+def get_mount_points(config=None):
     """Get list of mount points to monitor, excluding virtual filesystems"""
     mount_points = []
     try:
@@ -128,7 +187,7 @@ def get_mount_points():
             if device.startswith("/dev/loop"):
                 continue
                 
-            print(f"[linux_disk] Found mount point: {mount_point}, device: {device}, usage: {percent}")
+            # Debug logging removed for brevity
             mount_points.append(mount_point)
             
     except Exception as e:
@@ -153,7 +212,7 @@ def get_mount_points():
                     if device.startswith("/dev/loop") or device == "none":
                         continue
                         
-                    print(f"[linux_disk] Found mount point from /proc/mounts: {mount_point}, device: {device}, fstype: {fstype}")
+                    # Debug logging removed for brevity
                     mount_points.append(mount_point)
         except Exception as e:
             print(f"[linux_disk] Error reading mount points from /proc/mounts: {e}")
@@ -161,7 +220,7 @@ def get_mount_points():
     if not mount_points:
         # Last resort - at least check root filesystem
         if os.path.exists("/"):
-            print("[linux_disk] No mount points found, adding root (/) as fallback")
+            # Debug logging removed for brevity
             mount_points.append("/")
     
     return mount_points

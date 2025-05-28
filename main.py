@@ -34,11 +34,15 @@ def apply_proxy_settings(config):
 def main():
     parser = argparse.ArgumentParser(description="Run rtcollector")
     parser.add_argument("--config", default="config.yaml", help="Path to config file")
-    parser.add_argument("--debug", action="store_true", help="Enable debug output")
+    parser.add_argument("-d", "--debug", action="store_true", help="Enable debug output")
     parser.add_argument("--once", action="store_true", help="Collect and push once")
     args = parser.parse_args()
-
+    
     config = load_config(args.config)
+    
+    # Override debug setting from command line
+    if args.debug:
+        config["debug"] = True
 
     apply_proxy_settings(config)
 
@@ -65,8 +69,14 @@ def main():
 
         try:
             mod = importlib.import_module(f"inputs.{plugin_name}")
+            # Add debug flag to plugin config
+            if not plugin_config:
+                plugin_config = {}
+            plugin_config["debug"] = config.get("debug", False) or args.debug
+            
             if plugin_config:
-                print(f"[DEBUG] Loading plugin: {plugin_name} with config: {plugin_config}")
+                if config.get("debug", False) or args.debug:
+                    print(f"[DEBUG] Loading plugin: {plugin_name} with config: {plugin_config}")
                 def make_collector(mod, plugin_config):
                     def collect_with_config():
                         result = mod.collect(plugin_config)
@@ -140,8 +150,18 @@ def main():
 
         collector = Collector(**collector_args)
         collector.output_types = output_types
-        if args.debug:
-            print(f"[{datetime.now().isoformat()}] [rtcollector] Starting in debug mode...")
+        collector.debug = config.get("debug", False) or args.debug
+        
+        # Print startup information
+        print(f"[{datetime.now().isoformat()}] [rtcollector] Starting rtcollector...")
+        print(f"[{datetime.now().isoformat()}] [rtcollector] Collection interval: {config['interval']} seconds")
+        print(f"[{datetime.now().isoformat()}] [rtcollector] Flush interval: {config.get('flush_interval', config['interval'])} seconds")
+        print(f"[{datetime.now().isoformat()}] [rtcollector] Configured inputs: {', '.join([i.__name__ if callable(i) else str(i) for i in inputs])}")
+        print(f"[{datetime.now().isoformat()}] [rtcollector] Configured outputs: {', '.join([o.__class__.__name__ for o in outputs])}")
+        
+        if collector.debug:
+            print(f"[{datetime.now().isoformat()}] [rtcollector] Running in DEBUG mode")
+        
         try:
             collector.run()
         except KeyboardInterrupt:

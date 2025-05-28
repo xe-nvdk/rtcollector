@@ -4,6 +4,7 @@ import platform
 import subprocess
 from core.metric import Metric
 from utils.system import get_hostname
+from utils.debug import debug_log
 
 def collect(config=None):
     """Collect process-related metrics including counts of processes by state."""
@@ -14,17 +15,17 @@ def collect(config=None):
     system = platform.system()
     
     if system == "Linux":
-        metrics = collect_linux_processes(hostname, timestamp)
+        metrics = collect_linux_processes(hostname, timestamp, config)
     elif system == "Darwin":  # macOS
-        metrics = collect_macos_processes(hostname, timestamp)
+        metrics = collect_macos_processes(hostname, timestamp, config)
     elif system == "Windows":
-        metrics = collect_windows_processes(hostname, timestamp)
+        metrics = collect_windows_processes(hostname, timestamp, config)
     else:
         print(f"[processes] Unsupported platform: {system}")
     
     return metrics
 
-def collect_linux_processes(hostname, timestamp):
+def collect_linux_processes(hostname, timestamp, config=None):
     """Collect process metrics on Linux by reading /proc."""
     metrics = []
     
@@ -99,14 +100,14 @@ def collect_linux_processes(hostname, timestamp):
             
         metrics.append(Metric("processes_total_threads", total_threads, timestamp, labels))
         
-        print(f"[processes] Collected Linux process metrics: total={states['total']}, threads={total_threads}")
+        # Debug logging removed for brevity
         
     except Exception as e:
         print(f"[processes] Error collecting Linux process metrics: {e}")
         
     return metrics
 
-def collect_macos_processes(hostname, timestamp):
+def collect_macos_processes(hostname, timestamp, config=None):
     """Collect process metrics on macOS using ps command."""
     metrics = []
     
@@ -165,14 +166,14 @@ def collect_macos_processes(hostname, timestamp):
             
         metrics.append(Metric("processes_total_threads", total_threads, timestamp, labels))
         
-        print(f"[processes] Collected macOS process metrics: total={states['total']}, threads={total_threads}")
+        # Debug logging removed for brevity
         
     except Exception as e:
         print(f"[processes] Error collecting macOS process metrics: {e}")
         
     return metrics
 
-def collect_windows_processes(hostname, timestamp):
+def collect_windows_processes(hostname, timestamp, config=None):
     """Collect process metrics on Windows using wmic."""
     metrics = []
     
@@ -207,7 +208,7 @@ def collect_windows_processes(hostname, timestamp):
             
         metrics.append(Metric("processes_total_threads", total_threads, timestamp, labels))
         
-        print(f"[processes] Collected Windows process metrics: total={states['total']}, threads={total_threads}")
+        # Debug logging removed for brevity
         
     except Exception as e:
         print(f"[processes] Error collecting Windows process metrics: {e}")

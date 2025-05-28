@@ -2,6 +2,7 @@ import redis
 import json
 import time
 import socket
+from utils.debug import debug_log
 
 class RedisSearch:
     def __init__(self, config=None, host="localhost", port=6379, db=0, index="logs_idx", key_prefix="log:", hostname=None):
@@ -28,8 +29,7 @@ class RedisSearch:
             self.redis = redis.Redis(host=self.host, port=self.port, db=self.db)
             # Test connection
             self.redis.ping()
-            if self.debug:
-                print(f"[RedisSearch] Successfully connected to Redis at {self.host}:{self.port}")
+            debug_log("RedisSearch", f"Successfully connected to Redis at {self.host}:{self.port}", {"debug": self.debug})
         except Exception as e:
             print(f"[RedisSearch] Failed to connect to Redis at {self.host}:{self.port}: {e}")
             self.redis = None
@@ -48,13 +48,11 @@ class RedisSearch:
             try:
                 # Try to get info about the index
                 self.redis.execute_command('FT.INFO', self.index_name)
-                if self.debug:
-                    print(f"[RedisSearch] Index {self.index_name} already exists")
+                debug_log("RedisSearch", f"Index {self.index_name} already exists", {"debug": self.debug})
             except redis.exceptions.ResponseError as e:
                 if "unknown index" in str(e).lower():
                     # Index doesn't exist, create it
-                    if self.debug:
-                        print(f"[RedisSearch] Creating index {self.index_name}")
+                    debug_log("RedisSearch", f"Creating index {self.index_name}", {"debug": self.debug})
                     
                     # Create index using raw Redis command
                     create_cmd = [
@@ -77,8 +75,7 @@ class RedisSearch:
                     
                     try:
                         self.redis.execute_command(*create_cmd)
-                        if self.debug:
-                            print(f"[RedisSearch] Successfully created index {self.index_name}")
+                        debug_log("RedisSearch", f"Successfully created index {self.index_name}", {"debug": self.debug})
                     except Exception as create_err:
                         print(f"[RedisSearch] Error creating index: {create_err}")
                         return False
@@ -112,22 +109,18 @@ class RedisSearch:
             if isinstance(e, dict):
                 # Handle syslog-style entries
                 if "name" in e and isinstance(e.get("name"), str) and e.get("name", "").startswith("syslog_"):
-                    if self.debug:
-                        print(f"[RedisSearch] Processing syslog entry: {e}")
+                    debug_log("RedisSearch", f"Processing syslog entry: {e}", {"debug": self.debug})
                     logs_to_write.append(e)
                 # Handle message-style entries
                 elif "message" in e:
-                    if self.debug:
-                        print(f"[RedisSearch] Processing message entry: {e}")
+                    debug_log("RedisSearch", f"Processing message entry: {e}", {"debug": self.debug})
                     logs_to_write.append(e)
         
         if not logs_to_write:
-            if self.debug:
-                print("[RedisSearch] No valid log entries to write")
+            debug_log("RedisSearch", "No valid log entries to write", {"debug": self.debug})
             return
             
-        if self.debug:
-            print(f"[RedisSearch] Writing {len(logs_to_write)} log entries")
+        debug_log("RedisSearch", f"Writing {len(logs_to_write)} log entries", {"debug": self.debug})
         
         # Write each log entry to Redis
         for entry in logs_to_write:
@@ -140,8 +133,7 @@ class RedisSearch:
                 elif isinstance(entry, dict):
                     data = entry
                 else:
-                    if self.debug:
-                        print(f"[RedisSearch] Skipping invalid entry type: {type(entry)}")
+                    debug_log("RedisSearch", f"Skipping invalid entry type: {type(entry)}", {"debug": self.debug})
                     continue
 
                 # Ensure required fields
@@ -160,15 +152,13 @@ class RedisSearch:
                 
                 # Store the log entry using JSON.SET
                 json_str = json.dumps(data)
-                if self.debug:
-                    print(f"[RedisSearch] Writing to {redis_key}: {json_str[:100]}...")
+                debug_log("RedisSearch", f"Writing to {redis_key}: {json_str[:100]}...", {"debug": self.debug})
                     
                 self.redis.execute_command('JSON.SET', redis_key, '$', json_str)
                 
             except Exception as e:
                 print(f"[RedisSearch] Error writing log entry: {e}")
-                if self.debug:
-                    print(f"[RedisSearch] Failed entry: {entry}")
+                debug_log("RedisSearch", f"Failed entry: {entry}", {"debug": self.debug})
 
     supports_logs = True
     supports_metrics = False

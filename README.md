@@ -84,7 +84,7 @@ Because most modern observability agents:
 | `linux_cpu`    | ✅     | per-core and total CPU usage  
 | `linux_mem`    | ✅     | free/used/available RAM  
 | `linux_disk`   | ✅     | disk usage by mount  
-| `linux_net`    | ✅     | bytes in/out, packet errors  
+| `linux_net`    | ✅     | bytes in/out, packet errors, configurable interface filtering  
 | `linux_io`     | ✅     | read/write bytes and ops  
 | `macos_cpu`    | ✅     | per-core and total CPU usage  
 | `macos_mem`    | ✅     | memory usage via `vm_stat`  
@@ -108,6 +108,8 @@ Because most modern observability agents:
 | `processes`    | ✅     | process counts, threads, and states (running, sleeping, zombie) |
 | `kernel`      | ✅     | kernel metrics including boot time, context switches, interrupts, and pressure stall information |
 | `netstat`     | ✅     | TCP connection states (established, time_wait, close_wait, etc.) for IPv4 and IPv6 |
+| `nstat`       | ✅     | Network statistics from /proc/net/snmp including IP, TCP, UDP, and ICMP error counters |
+| `linux_swap`   | ✅     | Swap usage and I/O metrics (total, free, used, in/out bytes) |
 
 ---
 
@@ -304,6 +306,16 @@ disk_usage_percent 84.3 source=exec host=atila ts=1716734400123
 - Each line includes a metric name, value, optional labels (`key=value`), and optional timestamp (`ts=...` in milliseconds).
 ---
 
+## 🛠️ Utility Functions
+
+rtcollector includes various utility functions to help with common tasks across plugins:
+
+- **[Rate Calculation](utils/README.md)**: Automatically calculate per-second rates from counter metrics (compensating for Redis TimeSeries' lack of non_negative_derivative functionality)
+- **System Information**: Get hostname and other system details
+- **Metric Formatting**: Create consistent metric names and labels
+
+See the [utils/README.md](utils/README.md) for more details on available utilities.
+
 ## 🧰 Configuration Notes
 
 ### 🔑 Authentication Parameters
@@ -341,6 +353,53 @@ disk_usage_percent 84.3 source=exec host=atila ts=1716734400123
   ```
 
 - Proxy support is optional and applied only if configured.
+
+### 🌐 Linux Network Plugin
+
+The Linux Network input plugin collects metrics about network interfaces:
+
+- **Network Traffic**: Bytes and packets sent/received per interface
+- **Network Errors**: Error and drop counts for each interface
+- **Rate Metrics**: Per-second rates for all counter metrics
+- **Bits/Second Metrics**: Network traffic in bits per second for bandwidth monitoring
+- **Interface Discovery**: Automatic discovery of network interfaces for dashboard variables
+
+Configuration options:
+```yaml
+inputs:
+  - linux_net:
+      exclude_patterns:
+        - "veth"
+        - "docker"
+        - "^br-"
+      include_patterns: []
+      exclude_interfaces: []
+      include_interfaces:
+        - "wlp0s20f3"  # Always include this interface
+```
+
+- `exclude_patterns`: List of regex patterns for interfaces to exclude
+- `include_patterns`: List of regex patterns for interfaces to include (overrides exclusions)
+- `exclude_interfaces`: List of specific interface names to exclude
+- `include_interfaces`: List of specific interface names to include (overrides exclusions)
+
+Example metrics:
+- `net_rx_bytes`: Total bytes received on an interface
+- `net_tx_bytes`: Total bytes sent on an interface
+- `net_rx_bytes_rate`: Bytes received per second
+- `net_tx_bytes_rate`: Bytes sent per second
+- `net_rx_bytes_bits_rate`: Bits received per second (for bandwidth monitoring)
+- `net_tx_bytes_bits_rate`: Bits sent per second (for bandwidth monitoring)
+- `net_rx_packets`: Total packets received
+- `net_tx_packets`: Total packets sent
+- `net_rx_errs`: Receive errors
+- `net_tx_errs`: Transmit errors
+- `net_rx_drop`: Dropped incoming packets
+- `net_tx_drop`: Dropped outgoing packets
+
+Interface-specific metrics are also available with the interface name in the key:
+- `net_rx_bytes_rate_eth0`: Bytes received per second on eth0
+- `net_tx_bytes_bits_rate_eth0`: Bits sent per second on eth0
 
 ### 🌐 HTTP Response Plugin
 
@@ -424,6 +483,70 @@ Example metrics:
 Implementation:
 - Uses native OS interfaces (/proc filesystem on Linux, ps command on macOS, wmic on Windows)
 - No external dependencies required
+
+### 📊 Network Statistics (nstat) Plugin
+
+The Network Statistics input plugin collects metrics from `/proc/net/snmp` and `/proc/net/snmp6`:
+
+- **IP Statistics**: IPv4 packet counts, errors, and discards
+- **TCP Statistics**: Connection statistics, segment counts, and errors
+- **UDP Statistics**: Datagram counts and errors
+- **ICMP Statistics**: Message counts and errors
+
+Configuration options:
+- Simply add the plugin to your config to enable it:
+  ```yaml
+  inputs:
+    - nstat
+  ```
+
+Example metrics:
+- **IPv4 Metrics**:
+  - `nstat_ip_InReceives`: Total number of received packets
+  - `nstat_ip_InDiscards`: Number of received packets discarded
+  - `nstat_ip_InHdrErrors`: Number of packets discarded due to header errors
+  - `nstat_ip_InAddrErrors`: Number of packets discarded due to address errors
+  - `nstat_ip_OutNoRoutes`: Number of packets discarded due to no route
+  - `nstat_ip_InUnknownProtos`: Number of packets discarded due to unknown protocol
+  - `nstat_ip_InDiscards_rate`: Rate of discarded packets per second
+  - `nstat_ip_OutDiscards_rate`: Rate of outgoing discarded packets per second
+
+- **IPv6 Metrics**:
+  - `nstat_ip6_InReceives`: Total number of IPv6 packets received
+  - `nstat_ip6_InDiscards`: Number of IPv6 packets discarded on input
+  - `nstat_ip6_InHdrErrors`: Number of IPv6 packets with header errors
+  - `nstat_ip6_InAddrErrors`: Number of IPv6 packets with address errors
+  - `nstat_ip6_OutDiscards`: Number of IPv6 packets discarded on output
+  - `nstat_ip6_InUnknownProtos`: Number of IPv6 packets with unknown protocol
+  - `nstat_ip6_InDiscards_rate`: Rate of IPv6 discarded packets per second
+  - `nstat_ip6_OutDiscards_rate`: Rate of IPv6 outgoing discarded packets per second
+
+- **TCP Metrics**:
+  - `nstat_tcp_ActiveOpens`: Number of active opens
+  - `nstat_tcp_PassiveOpens`: Number of passive opens
+  - `nstat_tcp_AttemptFails`: Number of failed connection attempts
+  - `nstat_tcp_EstabResets`: Number of connection resets
+  - `nstat_tcp_RetransSegs`: Number of retransmitted segments
+  - `nstat_tcp_RetransSegs_rate`: Rate of retransmitted segments per second
+
+- **UDP Metrics**:
+  - `nstat_udp_InDatagrams`: Number of received datagrams
+  - `nstat_udp_NoPorts`: Number of received datagrams with no application at the port
+  - `nstat_udp_InErrors`: Number of received datagrams with errors
+  - `nstat_udp_OutDatagrams`: Number of sent datagrams
+  - `nstat_udp_InDatagrams_rate`: Rate of received datagrams per second
+  - `nstat_udp_OutDatagrams_rate`: Rate of sent datagrams per second
+
+- **ICMP Metrics**:
+  - `nstat_icmp_InMsgs`: Number of received ICMP messages
+  - `nstat_icmp_OutMsgs`: Number of sent ICMP messages
+  - `nstat_icmp_InErrors`: Number of received ICMP messages with errors
+  - `nstat_icmp_OutErrors`: Number of ICMP messages not sent due to errors
+  - `nstat_icmp_InMsgs_rate`: Rate of received ICMP messages per second
+  - `nstat_icmp_OutMsgs_rate`: Rate of sent ICMP messages per second
+
+Requirements:
+- Linux operating system with `/proc/net/snmp` and optionally `/proc/net/snmp6` files
 
 ### 🌐 Netstat Plugin
 
@@ -509,11 +632,16 @@ Configuration options:
 
 Example metrics:
 - `kernel_boot_time`: System boot time in seconds since epoch
-- `kernel_context_switches`: Number of context switches
-- `kernel_interrupts`: Number of interrupts
-- `kernel_processes_forked`: Number of processes forked
-- `kernel_disk_pages_in`: Number of disk pages paged in
-- `kernel_disk_pages_out`: Number of disk pages paged out
+- `kernel_context_switches`: Total number of context switches since boot
+- `kernel_context_switches_rate`: Context switches per second
+- `kernel_interrupts`: Total number of interrupts since boot
+- `kernel_interrupts_rate`: Interrupts per second
+- `kernel_processes_forked`: Total number of processes forked since boot
+- `kernel_processes_forked_rate`: Processes forked per second
+- `kernel_disk_pages_in`: Total number of disk pages paged in since boot
+- `kernel_disk_pages_in_rate`: Disk pages paged in per second
+- `kernel_disk_pages_out`: Total number of disk pages paged out since boot
+- `kernel_disk_pages_out_rate`: Disk pages paged out per second
 - `kernel_entropy_avail`: Available entropy
 - `kernel_pressure_avg10`, `kernel_pressure_avg60`, `kernel_pressure_avg300`: Pressure metrics for CPU, memory, and I/O
 - `kernel_fd_allocated`: Number of allocated file descriptors
@@ -523,6 +651,37 @@ Example metrics:
 
 Requirements:
 - Linux operating system
+
+### 💾 Linux Swap Plugin
+
+The Linux Swap input plugin collects swap usage and I/O metrics:
+
+- **Swap Usage**: Total, free, and used swap space
+- **Swap I/O**: Bytes swapped in and out of swap space
+- **Rate Metrics**: Per-second rates for swap I/O
+
+Configuration options:
+- Simply add the plugin to your config to enable it:
+  ```yaml
+  inputs:
+    - linux_swap
+  ```
+
+Example metrics:
+- **Swap Usage**:
+  - `swap_total`: Total swap space in bytes
+  - `swap_free`: Free swap space in bytes
+  - `swap_used`: Used swap space in bytes
+  - `swap_used_percent`: Percentage of swap used
+
+- **Swap I/O**:
+  - `swap_in`: Total bytes swapped in since boot
+  - `swap_out`: Total bytes swapped out since boot
+  - `swap_in_rate`: Bytes swapped in per second
+  - `swap_out_rate`: Bytes swapped out per second
+
+Requirements:
+- Linux operating system with `/proc/meminfo` and `/proc/vmstat` files
 
 ### 🖥️ System Plugin
 

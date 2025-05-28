@@ -2,6 +2,7 @@ import time
 import socket
 import platform
 from core.metric import Metric
+from utils.debug import debug_log
 
 _last_cpu_times = {}
 
@@ -15,20 +16,20 @@ def collect(config=None):
     timestamp = int(time.time() * 1000)
     hostname = socket.gethostname()
     
-    print("[linux_cpu] Starting CPU metrics collection")
+    # Debug logging removed for brevity
     
     try:
-        current = _read_proc_stat()
+        current = _read_proc_stat(config)
         
         global _last_cpu_times
         if not _last_cpu_times:
             _last_cpu_times = current
             time.sleep(0.1)
-            current = _read_proc_stat()
+            current = _read_proc_stat(config)
         
         for cpu_id in current:
             if cpu_id not in _last_cpu_times:
-                print(f"[linux_cpu] Skipping uninitialized core: {cpu_id}")
+                debug_log("linux_cpu", f"Skipping uninitialized core: {cpu_id}", config)
                 continue
             
             fields = _calculate_fields(_last_cpu_times[cpu_id], current[cpu_id])
@@ -47,17 +48,17 @@ def collect(config=None):
                     timestamp=timestamp,
                     labels={"source": "linux_cpu", "core": core_label, "host": hostname}
                 ))
-                print(f"[linux_cpu] Added metric: {metric_name}, core: {core_label}, value: {v:.2f}")
+                # Only log detailed metrics in debug mode
         
         _last_cpu_times = current
         
     except Exception as e:
         print(f"[linux_cpu] Error collecting Linux CPU metrics: {e}")
     
-    print(f"[linux_cpu] Collected {len(metrics)} CPU metrics")
+    # Debug logging removed for brevity
     return metrics
 
-def _read_proc_stat():
+def _read_proc_stat(config=None):
     cpu_stats = {}
     try:
         with open("/proc/stat", "r") as f:
@@ -68,7 +69,7 @@ def _read_proc_stat():
                 cpu_id = parts[0]  # e.g., 'cpu', 'cpu0', 'cpu1'
                 values = list(map(int, parts[1:]))
                 cpu_stats[cpu_id] = values
-                print(f"[linux_cpu] Found CPU: {cpu_id} with values: {values[:4]}...")
+                # Debug logging removed for brevity
     except Exception as e:
         print(f"[linux_cpu] Error reading /proc/stat: {e}")
     return cpu_stats

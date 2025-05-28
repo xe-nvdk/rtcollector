@@ -7,6 +7,7 @@ import subprocess
 from datetime import datetime, timedelta
 from core.metric import Metric
 from utils.system import get_hostname
+from utils.debug import debug_log
 
 def get_load_avg():
     """Get system load averages for 1, 5, and 15 minutes."""
@@ -91,5 +92,7 @@ def collect(config=None):
         Metric("system_n_cpus", n_cpus, timestamp, {"host": hostname}),
         Metric("system_uptime", uptime_seconds, timestamp, {"host": hostname}),
     ]
+    
+    # Debug logging removed for brevity
     
     return metrics

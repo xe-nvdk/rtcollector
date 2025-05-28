@@ -2,6 +2,7 @@ import time
 import socket
 import platform
 from core.metric import Metric
+from utils.debug import debug_log
 
 def collect(config=None):
     # Verify we're on Linux
@@ -97,5 +98,5 @@ def _read_meminfo():
                 
                 meminfo[key] = value
     except Exception as e:
-        print(f"[linux_mem] Error reading /proc/meminfo: {e}")
+        print(f"[linux_mem] Error reading /proc/meminfo: {e}")  # Keep this as regular print for errors
     return meminfo

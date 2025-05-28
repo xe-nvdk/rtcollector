@@ -9,6 +9,7 @@ class Collector:
         self.flush_interval = flush_interval or interval
         self.max_buffer_size = max_buffer_size
         self.warn_on_buffer = warn_on_buffer
+        self.debug = False  # Default to non-debug mode
         if self.flush_interval < self.interval:
             print(f"[WARNING] Flush interval ({self.flush_interval}) is shorter than collection interval ({self.interval}) — this may lead to unintended behavior.")
         self.inputs = inputs
@@ -95,6 +96,8 @@ class Collector:
                             count += 1
                     slow_flag = " ⚠️" if duration > 1.0 else ""
                     print(f"[{datetime.now().isoformat()}] [{plugin_name}] Collected {count} metrics in {duration:.2f}s{slow_flag}")
+                    
+                    # Sample metrics are completely disabled unless in debug mode
                 except Exception as e:
                     print(f"[{datetime.now().isoformat()}] [Collector] Error in input plugin '{plugin_name}': {e}")
 

@@ -3,6 +3,8 @@ import time
 import platform
 from core.metric import Metric
 from utils.system import get_hostname
+from utils.metrics import calculate_rate, create_key
+from utils.debug import debug_log
 
 def collect(config=None):
     """Collect kernel metrics."""
@@ -20,23 +22,68 @@ def collect(config=None):
             for line in f:
                 if line.startswith("ctxt "):
                     context_switches = int(line.split()[1])
-                    metrics.append(Metric("kernel_context_switches", context_switches, timestamp, {"host": hostname}))
+                    labels = {"host": hostname}
+                    
+                    # Add raw counter metric
+                    metrics.append(Metric("kernel_context_switches", context_switches, timestamp, labels))
+                    
+                    # Calculate and add rate metric
+                    metric_key = create_key("kernel_context_switches", labels)
+                    rate = calculate_rate(metric_key, context_switches, timestamp)
+                    if rate is not None:
+                        metrics.append(Metric("kernel_context_switches_rate", rate, timestamp, labels))
+                        
                 elif line.startswith("btime "):
                     boot_time = int(line.split()[1])
                     metrics.append(Metric("kernel_boot_time", boot_time, timestamp, {"host": hostname}))
+                    
                 elif line.startswith("intr "):
                     interrupts = int(line.split()[1])
-                    metrics.append(Metric("kernel_interrupts", interrupts, timestamp, {"host": hostname}))
+                    labels = {"host": hostname}
+                    
+                    # Add raw counter metric
+                    metrics.append(Metric("kernel_interrupts", interrupts, timestamp, labels))
+                    
+                    # Calculate and add rate metric
+                    metric_key = create_key("kernel_interrupts", labels)
+                    rate = calculate_rate(metric_key, interrupts, timestamp)
+                    if rate is not None:
+                        metrics.append(Metric("kernel_interrupts_rate", rate, timestamp, labels))
+                        
                 elif line.startswith("processes "):
                     processes_forked = int(line.split()[1])
-                    metrics.append(Metric("kernel_processes_forked", processes_forked, timestamp, {"host": hostname}))
+                    labels = {"host": hostname}
+                    
+                    # Add raw counter metric
+                    metrics.append(Metric("kernel_processes_forked", processes_forked, timestamp, labels))
+                    
+                    # Calculate and add rate metric
+                    metric_key = create_key("kernel_processes_forked", labels)
+                    rate = calculate_rate(metric_key, processes_forked, timestamp)
+                    if rate is not None:
+                        metrics.append(Metric("kernel_processes_forked_rate", rate, timestamp, labels))
+                        
                 elif line.startswith("page "):
                     parts = line.split()
                     if len(parts) >= 3:
                         pages_in = int(parts[1])
                         pages_out = int(parts[2])
-                        metrics.append(Metric("kernel_disk_pages_in", pages_in, timestamp, {"host": hostname}))
-                        metrics.append(Metric("kernel_disk_pages_out", pages_out, timestamp, {"host": hostname}))
+                        labels = {"host": hostname}
+                        
+                        # Add raw counter metrics
+                        metrics.append(Metric("kernel_disk_pages_in", pages_in, timestamp, labels))
+                        metrics.append(Metric("kernel_disk_pages_out", pages_out, timestamp, labels))
+                        
+                        # Calculate and add rate metrics
+                        in_key = create_key("kernel_disk_pages_in", labels)
+                        in_rate = calculate_rate(in_key, pages_in, timestamp)
+                        if in_rate is not None:
+                            metrics.append(Metric("kernel_disk_pages_in_rate", in_rate, timestamp, labels))
+                            
+                        out_key = create_key("kernel_disk_pages_out", labels)
+                        out_rate = calculate_rate(out_key, pages_out, timestamp)
+                        if out_rate is not None:
+                            metrics.append(Metric("kernel_disk_pages_out_rate", out_rate, timestamp, labels))
     except Exception as e:
         print(f"[kernel] Error reading /proc/stat: {e}")
     
@@ -72,7 +119,17 @@ def collect(config=None):
             try:
                 with open(os.path.join(ksm_dir, filename), "r") as f:
                     value = int(f.read().strip())
-                    metrics.append(Metric(metric_name, value, timestamp, {"host": hostname}))
+                    labels = {"host": hostname}
+                    
+                    # Add raw counter metric
+                    metrics.append(Metric(metric_name, value, timestamp, labels))
+                    
+                    # Calculate and add rate metric for counter metrics
+                    if "full_scans" in filename or "pages_" in filename or "stable_node_" in filename:
+                        metric_key = create_key(metric_name, labels)
+                        rate = calculate_rate(metric_key, value, timestamp)
+                        if rate is not None:
+                            metrics.append(Metric(f"{metric_name}_rate", rate, timestamp, labels))
             except Exception as e:
                 # Skip files that don't exist or can't be read
                 pass
@@ -105,8 +162,15 @@ def collect(config=None):
                         name, value = metric.split("=")
                         if name in psi_metrics:
                             if name == "total":
-                                # Total is an integer
-                                metrics.append(Metric("kernel_pressure_total", int(value), timestamp, labels))
+                                # Total is an integer counter
+                                total_value = int(value)
+                                metrics.append(Metric("kernel_pressure_total", total_value, timestamp, labels))
+                                
+                                # Calculate and add rate metric
+                                metric_key = create_key("kernel_pressure_total", labels)
+                                rate = calculate_rate(metric_key, total_value, timestamp)
+                                if rate is not None:
+                                    metrics.append(Metric("kernel_pressure_total_rate", rate, timestamp, labels))
                             else:
                                 # avg values are floats
                                 metrics.append(Metric(f"kernel_pressure_{name}", float(value), timestamp, labels))
@@ -133,5 +197,5 @@ def collect(config=None):
     except Exception as e:
         print(f"[kernel] Error reading file descriptor stats: {e}")
     
-    print(f"[kernel] Collected {len(metrics)} kernel metrics")
+    # Debug logging removed for brevity
     return metrics

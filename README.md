@@ -95,7 +95,7 @@ Because most modern observability agents:
 | `syslog`       | ✅     | receive and parse RFC5424/RFC3164 logs over TCP/UDP; supports JSON output via RedisSearch |
 | `mariadb`      | ✅     | collects server stats via `SHOW GLOBAL STATUS`; supports configurable metrics with direct authentication parameters  |
 | `postgres`     | ✅     | database stats, background writer metrics, replication lag monitoring  |
-| `redis`        | ✅     | Collects server stats, memory usage, CPU, clients, persistence, replication, stats, keyspace, and latency via INFO; requires host and port configuration with direct authentication parameters |
+| `redis`        | ✅     | Collects server stats, memory usage, CPU, clients, persistence, replication, stats, keyspace, and latency via INFO; supports ACL user authentication, password authentication, and SSL/TLS encrypted connections |
 | `exec`         | ✅     | run external scripts and collect metrics/logs via JSON or plaintext format (`metrics`) |
 | `http_response` | ✅     | monitor HTTP/HTTPS endpoints with response time, status code, SSL cert validation |
 | `windows_cpu`   | ✅     | CPU usage metrics for Windows systems |
@@ -118,8 +118,8 @@ Because most modern observability agents:
 
 | Plugin            | Notes |
 |-------------------|-------|
-| `redistimeseries` | ✅ Default and most stable output; supports automatic key creation with retention policies and labels; supports dynamic hostname tagging and duplicate policy handling |
-| `redissearch`     | ✅ Used for structured log ingestion (e.g., syslog); stores JSON documents in Redis and indexes fields like severity, appname, and message for querying via RediSearch |
+| `redistimeseries` | ✅ Default and most stable output; supports automatic key creation with retention policies and labels; supports dynamic hostname tagging, duplicate policy handling, ACL user authentication, password authentication, and SSL/TLS encrypted connections |
+| `redissearch`     | ✅ Used for structured log ingestion (e.g., syslog); stores JSON documents in Redis and indexes fields like severity, appname, and message for querying via RediSearch; supports ACL user authentication, password authentication, and SSL/TLS encrypted connections |
 | (Planned) `stdout`| for testing/debugging locally |
 | (Planned) `clickhouse` | push metrics to cold storage / analytics engine |
 | (Planned) `mqtt` / `http_post` | to integrate with IoT or alerting systems |
@@ -324,6 +324,116 @@ See the [utils/README.md](utils/README.md) for more details on available utiliti
 - All input plugins requiring authentication (like `mariadb`, `redis`, `postgres`) now use direct authentication parameters at the root level of their configuration.
 - For example, MariaDB and Redis use `user` and `password` directly in their configuration block, not in a nested `auth` object.
 - This simplifies configuration and makes it more consistent across plugins.
+
+### 🔒 Redis Authentication Options
+
+rtcollector supports three authentication methods for Redis connections:
+
+1. **Password Authentication**:
+   ```yaml
+   - redistimeseries:
+       host: redis.example.com
+       port: 6379
+       password: "your-redis-password"
+   ```
+
+2. **ACL User Authentication** (Redis 6.0+):
+   ```yaml
+   - redistimeseries:
+       host: redis.example.com
+       port: 6379
+       username: "metrics_user"
+       password: "user-specific-password"
+   ```
+
+3. **SSL/TLS Authentication**:
+   ```yaml
+   - redistimeseries:
+       host: redis.example.com
+       port: 6379
+       ssl: true
+       ssl_ca_certs: "/path/to/ca.pem"
+       ssl_certfile: "/path/to/cert.pem"
+       ssl_keyfile: "/path/to/key.pem"
+   ```
+
+These methods can be combined for enhanced security. All Redis-related components (inputs and outputs) support these authentication options.
+
+### 🔧 Redis TimeSeries Configuration
+
+When using Redis with authentication via a custom configuration file, make sure to set the appropriate duplicate policy for TimeSeries:
+
+```
+# TimeSeries configuration
+ts-duplicate-policy LAST
+```
+
+This setting is crucial for rtcollector to function properly, as it allows updating existing time series data points. Without this setting, you may encounter errors like:
+
+```
+TSDB: Error at upsert, update is not supported when DUPLICATE_POLICY is set to BLOCK mode
+```
+
+Example redis.conf with authentication and proper TimeSeries configuration:
+
+```
+# Password authentication
+requirepass your_password
+
+# ACL configuration
+user default off
+user rtcollector on >your_password ~* +@all
+
+# Load modules
+loadmodule /usr/local/lib/redis/modules/redisearch.so
+loadmodule /usr/local/lib/redis/modules/redistimeseries.so
+loadmodule /usr/local/lib/redis/modules/rejson.so
+
+# TimeSeries configuration
+ts-duplicate-policy LAST
+```
+
+### 📊 Redis TimeSeries Data Format
+
+rtcollector stores metrics in Redis TimeSeries using the following format:
+
+```
+metric_name timestamp value LABELS label1 value1 label2 value2
+```
+
+For example:
+```
+net_rx_bytes_eth0 1748552776684 1024.0 LABELS host atila iface eth0
+```
+
+Breaking it down:
+```
+net_rx_bytes_eth0 1748552776684 1024.0 LABELS host atila iface eth0
+|---------------| |------------| |---| |-----||----||----||----||----|
+      name         timestamp    value    label  val  label  val
+```
+
+This maps to the Redis TimeSeries command:
+```
+TS.ADD net_rx_bytes_eth0 1748552776684 1024.0 LABELS host atila iface eth0
+```
+
+When querying this data in Redis:
+```
+127.0.0.1:6379> TS.RANGE net_rx_bytes_eth0 1748552776684 1748552776684
+1) 1) (integer) 1748552776684
+   2) "1024"
+```
+
+The metadata (labels) can be viewed with:
+```
+127.0.0.1:6379> TS.INFO net_rx_bytes_eth0
+```
+
+This format differs from other time series databases like InfluxDB, which uses a line protocol format like:
+```
+measurement,tag1=value1,tag2=value2 field1=value1,field2=value2 timestamp
+```
 
 ### ⏱️ Collection and Flushing Intervals
 

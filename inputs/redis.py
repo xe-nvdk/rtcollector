@@ -13,18 +13,44 @@ def collect(config) -> tuple:
     # Required configuration parameters
     host = redis_config.get("host")
     port = redis_config.get("port")
+    username = redis_config.get("username")
     password = redis_config.get("password")
     db = redis_config.get("db", 0)  # db is optional, defaults to 0
+    
+    # SSL configuration
+    ssl = redis_config.get("ssl", False)
+    ssl_ca_certs = redis_config.get("ssl_ca_certs")
+    ssl_certfile = redis_config.get("ssl_certfile")
+    ssl_keyfile = redis_config.get("ssl_keyfile")
 
     if not all([host, port]):
         print("[redis] Error: Missing required configuration. Please check config.yml for host and port settings.")
         return [], []
 
     try:
-        r = redis.Redis(host=host, port=port, password=password, db=db)
+        # Configure SSL if enabled
+        ssl_params = {}
+        if ssl:
+            ssl_params = {
+                "ssl": True,
+                "ssl_ca_certs": ssl_ca_certs,
+                "ssl_certfile": ssl_certfile,
+                "ssl_keyfile": ssl_keyfile
+            }
+            # Remove None values
+            ssl_params = {k: v for k, v in ssl_params.items() if v is not None}
+            
+        r = redis.Redis(host=host, port=port, username=username, password=password, db=db, **ssl_params)
         info = r.info()
+    except redis.exceptions.AuthenticationError:
+        print(f"\033[91m[redis] ERROR: Authentication failed for Redis at {host}:{port}. Please check username and password.\033[0m")
+        print(f"\033[93m[redis] HINT: If Redis requires authentication, make sure to set username and/or password in config.yml\033[0m")
+        return [], []
+    except redis.exceptions.ConnectionError as e:
+        print(f"\033[91m[redis] ERROR: Could not connect to Redis at {host}:{port}: {e}\033[0m")
+        return [], []
     except Exception as e:
-        print(f"[redis] Error connecting to Redis: {e}")
+        print(f"\033[91m[redis] Error connecting to Redis: {e}\033[0m")
         return [], []
 
     timestamp = time.time()

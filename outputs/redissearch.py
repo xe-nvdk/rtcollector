@@ -5,7 +5,7 @@ import socket
 from utils.debug import debug_log
 
 class RedisSearch:
-    def __init__(self, config=None, host="localhost", port=6379, db=0, index="logs_idx", key_prefix="log:", hostname=None):
+    def __init__(self, config=None, host="localhost", port=6379, db=0, index="logs_idx", key_prefix="log:", hostname=None, username=None, password=None, ssl=False, ssl_ca_certs=None, ssl_certfile=None, ssl_keyfile=None):
         # Accept both config dict or direct params for compatibility
         if config is not None:
             self.host = config.get("host", host)
@@ -15,6 +15,12 @@ class RedisSearch:
             self.prefix = config.get("key_prefix", key_prefix)
             self.hostname = config.get("hostname", hostname) or socket.gethostname()
             self.debug = config.get("debug", False)
+            self.username = config.get("username", username)
+            self.password = config.get("password", password)
+            self.ssl = config.get("ssl", ssl)
+            self.ssl_ca_certs = config.get("ssl_ca_certs", ssl_ca_certs)
+            self.ssl_certfile = config.get("ssl_certfile", ssl_certfile)
+            self.ssl_keyfile = config.get("ssl_keyfile", ssl_keyfile)
         else:
             self.host = host
             self.port = port
@@ -23,12 +29,47 @@ class RedisSearch:
             self.prefix = key_prefix
             self.hostname = hostname or socket.gethostname()
             self.debug = False
+            self.username = username
+            self.password = password
+            self.ssl = ssl
+            self.ssl_ca_certs = ssl_ca_certs
+            self.ssl_certfile = ssl_certfile
+            self.ssl_keyfile = ssl_keyfile
             
         # Connect to Redis
         try:
-            self.redis = redis.Redis(host=self.host, port=self.port, db=self.db)
-            # Test connection
-            self.redis.ping()
+            # Configure SSL if enabled
+            ssl_params = None
+            if self.ssl:
+                ssl_params = {
+                    "ssl": True,
+                    "ssl_ca_certs": self.ssl_ca_certs,
+                    "ssl_certfile": self.ssl_certfile,
+                    "ssl_keyfile": self.ssl_keyfile
+                }
+                # Remove None values
+                ssl_params = {k: v for k, v in ssl_params.items() if v is not None}
+            
+            # Create Redis connection with auth and SSL if configured
+            try:
+                self.redis = redis.Redis(
+                    host=self.host, 
+                    port=self.port, 
+                    db=self.db,
+                    username=self.username,
+                    password=self.password,
+                    **ssl_params if ssl_params else {}
+                )
+                # Test connection
+                self.redis.ping()
+                debug_log("RedisSearch", f"Successfully connected to Redis at {self.host}:{self.port}", {"debug": self.debug})
+            except redis.exceptions.AuthenticationError:
+                print(f"\033[91m[RedisSearch] ERROR: Authentication failed for Redis at {self.host}:{self.port}. Please check username and password.\033[0m")
+                print(f"\033[93m[RedisSearch] HINT: If Redis requires authentication, make sure to set username and/or password in config.yml\033[0m")
+                self.redis = None
+            except redis.exceptions.ConnectionError as e:
+                print(f"\033[91m[RedisSearch] ERROR: Could not connect to Redis at {self.host}:{self.port}: {e}\033[0m")
+                self.redis = None
             debug_log("RedisSearch", f"Successfully connected to Redis at {self.host}:{self.port}", {"debug": self.debug})
         except Exception as e:
             print(f"[RedisSearch] Failed to connect to Redis at {self.host}:{self.port}: {e}")
@@ -94,12 +135,37 @@ class RedisSearch:
         # Ensure Redis connection
         if not self.redis:
             try:
-                self.redis = redis.Redis(host=self.host, port=self.port, db=self.db)
+                # Configure SSL if enabled
+                ssl_params = None
+                if self.ssl:
+                    ssl_params = {
+                        "ssl": True,
+                        "ssl_ca_certs": self.ssl_ca_certs,
+                        "ssl_certfile": self.ssl_certfile,
+                        "ssl_keyfile": self.ssl_keyfile
+                    }
+                    # Remove None values
+                    ssl_params = {k: v for k, v in ssl_params.items() if v is not None}
+                
+                self.redis = redis.Redis(
+                    host=self.host, 
+                    port=self.port, 
+                    db=self.db,
+                    username=self.username,
+                    password=self.password,
+                    **ssl_params if ssl_params else {}
+                )
                 self.redis.ping()
                 # Ensure index exists
                 self.ensure_index()
+            except redis.exceptions.AuthenticationError:
+                print(f"\033[91m[RedisSearch] ERROR: Authentication failed for Redis at {self.host}:{self.port}. Please check username and password.\033[0m")
+                return
+            except redis.exceptions.ConnectionError as e:
+                print(f"\033[91m[RedisSearch] Failed to reconnect to Redis: {e}\033[0m")
+                return
             except Exception as e:
-                print(f"[RedisSearch] Failed to reconnect to Redis: {e}")
+                print(f"\033[91m[RedisSearch] Failed to reconnect to Redis: {e}\033[0m")
                 return
                 
         logs_to_write = []

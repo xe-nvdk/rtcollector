@@ -9,13 +9,11 @@ from utils.debug import debug_log
 def collect(config=None):
     # Verify we're on Linux
     if platform.system() != "Linux":
-        return {
-            "linux_disk_logs": [{
-                "message": "linux_disk plugin can only run on Linux systems",
-                "level": "error",
-                "tags": {"source": "linux_disk"}
-            }]
-        }
+        return [], [{
+            "message": "linux_disk plugin can only run on Linux systems",
+            "level": "error",
+            "tags": {"source": "linux_disk"}
+        }]
     
     # Get configuration
     if config is None:
@@ -89,55 +87,48 @@ def collect(config=None):
                 # Common labels - use "root" instead of "/" for the root mount point
                 labels = {"source": "linux_disk", "mount": "root" if mount == "/" else mount, "host": hostname}
                 
-                # Add disk space metrics
-                metrics.extend([
-                    Metric(name="disk_total", value=total, timestamp=timestamp, labels=labels),
-                    Metric(name="disk_used", value=used, timestamp=timestamp, labels=labels),
-                    Metric(name="disk_free", value=free, timestamp=timestamp, labels=labels),
-                    Metric(name="disk_available", value=available, timestamp=timestamp, labels=labels),
-                    Metric(name="disk_used_percent", value=used_percent, timestamp=timestamp, labels=labels),
-                ])
-                
-                # Add mount-specific metrics with mount point in the key
-                # Replace slashes with underscores for valid metric names
+                # Add disk space metrics with unique keys per mount point to avoid conflicts
+                # Use mount-specific keys for all metrics to prevent duplicate policy issues
                 mount_key = mount.replace('/', '_').strip('_')
                 if not mount_key:
                     mount_key = "root"  # For root directory
-                
-                # Debug output to help diagnose the issue
-                print(f"[linux_disk] Processing mount point: {mount}, mount_key: {mount_key}")
                     
                 metrics.extend([
                     Metric(name=f"disk_total_{mount_key}", value=total, timestamp=timestamp, labels=labels),
                     Metric(name=f"disk_used_{mount_key}", value=used, timestamp=timestamp, labels=labels),
                     Metric(name=f"disk_free_{mount_key}", value=free, timestamp=timestamp, labels=labels),
+                    Metric(name=f"disk_available_{mount_key}", value=available, timestamp=timestamp, labels=labels),
                     Metric(name=f"disk_used_percent_{mount_key}", value=used_percent, timestamp=timestamp, labels=labels),
                 ])
                 
-                # Add inode metrics
-                metrics.extend([
-                    Metric(name="disk_inodes_total", value=inodes_total, timestamp=timestamp, labels=labels),
-                    Metric(name="disk_inodes_used", value=inodes_used, timestamp=timestamp, labels=labels),
-                    Metric(name="disk_inodes_free", value=inodes_free, timestamp=timestamp, labels=labels),
-                    Metric(name="disk_inodes_percent", value=inodes_percent, timestamp=timestamp, labels=labels),
-                ])
+                # Debug output to help diagnose the issue
+                print(f"[linux_disk] Processing mount point: {mount}, mount_key: {mount_key}")
                 
-                # Add mount-specific inode metrics with mount point in the key
+                # We already added these metrics with mount_key above, so we don't need to add them again
+                # This section is now redundant and can be removed
+                
+                # Add inode metrics with mount-specific keys to avoid duplicate policy issues
                 metrics.extend([
                     Metric(name=f"disk_inodes_total_{mount_key}", value=inodes_total, timestamp=timestamp, labels=labels),
                     Metric(name=f"disk_inodes_used_{mount_key}", value=inodes_used, timestamp=timestamp, labels=labels),
                     Metric(name=f"disk_inodes_free_{mount_key}", value=inodes_free, timestamp=timestamp, labels=labels),
                     Metric(name=f"disk_inodes_percent_{mount_key}", value=inodes_percent, timestamp=timestamp, labels=labels),
-                        # Add direct key names for easier ts.range queries
+                ])
+                
+                # Add direct key names for easier ts.range queries
+                metrics.extend([
                     Metric(name=f"inodes_total_{mount_key}", value=inodes_total, timestamp=timestamp, labels=labels),
                     Metric(name=f"inodes_used_{mount_key}", value=inodes_used, timestamp=timestamp, labels=labels),
                     Metric(name=f"inodes_free_{mount_key}", value=inodes_free, timestamp=timestamp, labels=labels),
-                    
-                    # Always add root-specific metrics for the root filesystem
-                    Metric(name=f"inodes_total_root" if mount == "/" else f"inodes_total_root_skip", value=inodes_total, timestamp=timestamp, labels=labels),
-                    Metric(name=f"inodes_used_root" if mount == "/" else f"inodes_used_root_skip", value=inodes_used, timestamp=timestamp, labels=labels),
-                    Metric(name=f"inodes_free_root" if mount == "/" else f"inodes_free_root_skip", value=inodes_free, timestamp=timestamp, labels=labels),
                 ])
+                
+                # Always add root-specific metrics for the root filesystem with unique names
+                if mount == "/":
+                    metrics.extend([
+                        Metric(name="inodes_total_root", value=inodes_total, timestamp=timestamp, labels=labels),
+                        Metric(name="inodes_used_root", value=inodes_used, timestamp=timestamp, labels=labels),
+                        Metric(name="inodes_free_root", value=inodes_free, timestamp=timestamp, labels=labels),
+                    ])
                 
             except Exception as e:
                 logs.append({
@@ -156,15 +147,30 @@ def collect(config=None):
     
     # Convert metrics to standard format
     standard_metrics = []
+    seen_keys = set()  # Track metric names to avoid duplicates
+    
     for metric in metrics:
+        # Skip metrics with duplicate names to avoid DUPLICATE_POLICY errors
+        if metric.name in seen_keys:
+            continue
+            
+        seen_keys.add(metric.name)
+        
         # Remove the linux_ prefix from metric names for consistency
         if metric.name.startswith("disk_"):
             standard_metrics.append(metric)
         else:
             # Create a copy with modified name
+            new_name = metric.name.replace("linux_disk_", "disk_") if metric.name.startswith("linux_disk_") else metric.name
+            
+            # Skip if we've already seen this name
+            if new_name in seen_keys:
+                continue
+                
+            seen_keys.add(new_name)
             standard_metrics.append(
                 Metric(
-                    name=metric.name.replace("linux_disk_", "disk_") if metric.name.startswith("linux_disk_") else metric.name,
+                    name=new_name,
                     value=metric.value,
                     timestamp=metric.timestamp,
                     labels=metric.labels
@@ -173,7 +179,7 @@ def collect(config=None):
     
     # Debug logging removed for brevity
     
-    return standard_metrics
+    return standard_metrics, logs
 
 def get_mount_points(config=None):
     """Get list of mount points to monitor, excluding virtual filesystems"""

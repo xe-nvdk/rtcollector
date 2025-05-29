@@ -7,8 +7,34 @@ from utils.debug import debug_log
 class Redistimeseries:
     supports_logs = False
     supports_metrics = True
-    def __init__(self, host="localhost", port=6379, db=0, retention="0", hostname=None, debug=False, password=None):
-        self.r = redis.Redis(host=host, port=port, db=db, password=password)
+    def __init__(self, host="localhost", port=6379, db=0, retention="0", hostname=None, debug=False, password=None, username=None, ssl=False, ssl_ca_certs=None, ssl_certfile=None, ssl_keyfile=None):
+        # Configure SSL if enabled
+        ssl_params = {}
+        if ssl:
+            ssl_params = {
+                "ssl": True,
+                "ssl_ca_certs": ssl_ca_certs,
+                "ssl_certfile": ssl_certfile,
+                "ssl_keyfile": ssl_keyfile
+            }
+            # Remove None values
+            ssl_params = {k: v for k, v in ssl_params.items() if v is not None}
+        
+        try:
+            self.r = redis.Redis(host=host, port=port, db=db, username=username, password=password, **ssl_params)
+            # Test connection with ping
+            self.r.ping()
+        except redis.exceptions.AuthenticationError:
+            print(f"\033[91m[Redistimeseries] ERROR: Authentication failed for Redis at {host}:{port}. Please check username and password.\033[0m")
+            print(f"\033[93m[Redistimeseries] HINT: If Redis requires authentication, make sure to set username and/or password in config.yml\033[0m")
+            self.r = None
+        except redis.exceptions.ConnectionError as e:
+            print(f"\033[91m[Redistimeseries] ERROR: Could not connect to Redis at {host}:{port}: {e}\033[0m")
+            self.r = None
+        except Exception as e:
+            print(f"\033[91m[Redistimeseries] ERROR: {e}\033[0m")
+            self.r = None
+            
         self.debug = debug
         self.config = {"debug": debug}  # Create a config dict for debug_log
         
@@ -36,6 +62,10 @@ class Redistimeseries:
 
     def _create_indexes(self):
         """Create indexes for common labels."""
+        if not self.r:
+            print("\033[91m[Redistimeseries] ERROR: Cannot create indexes - Redis connection not available\033[0m")
+            return
+            
         debug_log("Redistimeseries", "Creating indexes for common labels", self.config)
         
         # Create a special time series that stores all unique hosts
@@ -95,6 +125,10 @@ class Redistimeseries:
             debug_log("Redistimeseries", "This is expected if no metrics have been collected yet", self.config)
     
     def write(self, metrics):
+        if not self.r:
+            print("\033[91m[Redistimeseries] ERROR: Cannot write metrics - Redis connection not available\033[0m")
+            return
+            
         pipe = self.r.pipeline()
         hosts_seen = set()
         
@@ -141,10 +175,34 @@ class Redistimeseries:
                 self.created_keys.add(key)
 
             try:
-                pipe.execute_command("TS.ADD", key, int(m.timestamp), float(m.value))
+                # Always use ON_DUPLICATE LAST to handle duplicate policy issues
+                pipe.execute_command("TS.ADD", key, int(m.timestamp), float(m.value), "ON_DUPLICATE", "LAST")
             except redis.exceptions.ResponseError as e:
                 if "DUPLICATE_POLICY" in str(e) or "at upsert" in str(e):
-                    pipe.execute_command("TS.ADD", key, "*", float(m.value))
+                    # If ON_DUPLICATE doesn't work (older Redis versions), try recreating the key with DUPLICATE_POLICY
+                    try:
+                        # Ensure labels are properly formatted
+                        labels = m.labels.copy() if m.labels else {}
+                        if "host" not in labels:
+                            labels["host"] = self.hostname
+                            
+                        # Format labels for TS.CREATE
+                        label_args = []
+                        for k, v in labels.items():
+                            label_args.extend([k, str(v)])
+                            
+                        # Try to recreate with DUPLICATE_POLICY
+                        self.r.execute_command(
+                            "TS.CREATE", key,
+                            "RETENTION", str(self.retention),
+                            "DUPLICATE_POLICY", "LAST",
+                            "LABELS", *label_args
+                        )
+                        # Now try to add the value again
+                        pipe.execute_command("TS.ADD", key, int(m.timestamp), float(m.value))
+                    except redis.exceptions.ResponseError:
+                        # Last resort: use current timestamp
+                        pipe.execute_command("TS.ADD", key, "*", float(m.value))
                 else:
                     debug_log("Redistimeseries", f"TS.ADD failed: {e}", self.config)
 

@@ -156,11 +156,11 @@ def collect(config=None):
             
             # Add metrics
             metrics.extend([
-                # Raw counters
-                Metric(name="io_reads", value=delta_reads, timestamp=timestamp, labels=labels),
-                Metric(name="io_writes", value=delta_writes, timestamp=timestamp, labels=labels),
-                Metric(name="io_read_bytes", value=read_bytes, timestamp=timestamp, labels=labels),
-                Metric(name="io_write_bytes", value=write_bytes, timestamp=timestamp, labels=labels),
+                # Raw counters with device in name to avoid duplicate policy issues
+                Metric(name=f"io_reads_{dev}", value=delta_reads, timestamp=timestamp, labels=labels),
+                Metric(name=f"io_writes_{dev}", value=delta_writes, timestamp=timestamp, labels=labels),
+                Metric(name=f"io_read_bytes_{dev}", value=read_bytes, timestamp=timestamp, labels=labels),
+                Metric(name=f"io_write_bytes_{dev}", value=write_bytes, timestamp=timestamp, labels=labels),
                 
                 # Rates
                 Metric(name="io_reads_per_sec", value=reads_per_sec, timestamp=timestamp, labels=labels),

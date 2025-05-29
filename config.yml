@@ -63,8 +63,14 @@ inputs:
   # - redis:
   #     host: "127.0.0.1"
   #     port: 6379
-  #     password: ""
+  #     username: ""  # Redis ACL username (Redis 6.0+)
+  #     password: ""  # Redis password authentication
   #     db: 0
+  #     # SSL/TLS options
+  #     ssl: false  # Enable SSL/TLS connection
+  #     ssl_ca_certs: ""  # Path to CA certificate file
+  #     ssl_certfile: ""  # Path to client certificate file
+  #     ssl_keyfile: ""  # Path to client key file
   # - mariadb:
   #     host: "127.0.0.1"
   #     port: 3306
@@ -134,11 +140,27 @@ outputs:
       host: atila.taild1b8e.ts.net
       port: 6379
       retention: 1y
+      # Authentication options
+      username: "rtcollector"  # Redis ACL username (Redis 6.0+)
+      password: "123456"  # Redis password authentication
+      # SSL/TLS options
+      # ssl: false  # Enable SSL/TLS connection
+      # ssl_ca_certs: ""  # Path to CA certificate file
+      # ssl_certfile: ""  # Path to client certificate file
+      # ssl_keyfile: ""  # Path to client key file
   - redissearch:
       host: atila.taild1b8e.ts.net
       port: 6379
       index: "logs_idx"
       key_prefix: "log:"
+      # Authentication options
+      username: "rtcollector"  # Redis ACL username (Redis 6.0+)
+      password: "123456"  # Redis password authentication
+      # SSL/TLS options
+      # ssl: false  # Enable SSL/TLS connection
+      # ssl_ca_certs: ""  # Path to CA certificate file
+      # ssl_certfile: ""  # Path to client certificate file
+      # ssl_keyfile: ""  # Path to client key file
       # Example proxy configuration for Redis outputs:
       # socks5_proxy: "socks5://username:password@127.0.0.1:1080"
       # socks4_proxy: "socks4://127.0.0.1:1080"

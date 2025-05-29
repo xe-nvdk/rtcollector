@@ -167,9 +167,9 @@ def collect(config=None):
             # Create metric name
             metric_name = f"net_{metric_type}"
             
-            # Add raw counter metric
+            # Add raw counter metric with interface name to avoid duplicate policy issues
             metrics.append(Metric(
-                name=metric_name,
+                name=f"{metric_name}_{iface}",
                 value=value,
                 timestamp=timestamp,
                 labels=labels

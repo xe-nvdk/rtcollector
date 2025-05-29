@@ -40,6 +40,10 @@ def main():
     
     config = load_config(args.config)
     
+    # Add internal plugin to inputs if not already present
+    if "inputs" in config and "internal" not in config["inputs"]:
+        config["inputs"].append("internal")
+    
     # Override debug setting from command line
     if args.debug:
         config["debug"] = True

@@ -23,6 +23,7 @@ def collect(config=None):
     
     # Get mount point filtering options
     exclude_mounts = config.get('exclude_mounts', [])
+    exclude_docker = config.get('exclude_docker', True)  # Default to excluding Docker mounts
     include_mounts = config.get('include_mounts', [])
     
     # Debug logging removed for brevity
@@ -46,11 +47,15 @@ def collect(config=None):
                 continue
                 
             # Add discovery metric for this mount point
+            mount_key = mount.replace('/', '_').strip('_')
+            if not mount_key and mount == "/":
+                mount_key = "root"  # For root directory
+                
             metrics.append(Metric(
-                name=f"disk_mountpoint_{mount.replace('/', '_').strip('_')}",
+                name=f"disk_mountpoint_{mount_key}",
                 value=1,  # Just a placeholder value
                 timestamp=timestamp,
-                labels={"host": hostname, "mountpoint": mount}
+                labels={"host": hostname, "mountpoint": mount if mount != "/" else "root"}
             ))
         
         # Collect disk usage metrics for each mount point
@@ -81,8 +86,8 @@ def collect(config=None):
                 inodes_used = inodes_total - inodes_free
                 inodes_percent = (inodes_used / inodes_total) * 100 if inodes_total > 0 else 0
                 
-                # Common labels - include both "mount" and "path" for compatibility
-                labels = {"source": "linux_disk", "mount": mount, "path": mount, "host": hostname}
+                # Common labels - use "root" instead of "/" for the root mount point
+                labels = {"source": "linux_disk", "mount": "root" if mount == "/" else mount, "host": hostname}
                 
                 # Add disk space metrics
                 metrics.extend([
@@ -98,6 +103,9 @@ def collect(config=None):
                 mount_key = mount.replace('/', '_').strip('_')
                 if not mount_key:
                     mount_key = "root"  # For root directory
+                
+                # Debug output to help diagnose the issue
+                print(f"[linux_disk] Processing mount point: {mount}, mount_key: {mount_key}")
                     
                 metrics.extend([
                     Metric(name=f"disk_total_{mount_key}", value=total, timestamp=timestamp, labels=labels),
@@ -120,10 +128,15 @@ def collect(config=None):
                     Metric(name=f"disk_inodes_used_{mount_key}", value=inodes_used, timestamp=timestamp, labels=labels),
                     Metric(name=f"disk_inodes_free_{mount_key}", value=inodes_free, timestamp=timestamp, labels=labels),
                     Metric(name=f"disk_inodes_percent_{mount_key}", value=inodes_percent, timestamp=timestamp, labels=labels),
-                    # Add direct key names for easier ts.range queries
+                        # Add direct key names for easier ts.range queries
                     Metric(name=f"inodes_total_{mount_key}", value=inodes_total, timestamp=timestamp, labels=labels),
                     Metric(name=f"inodes_used_{mount_key}", value=inodes_used, timestamp=timestamp, labels=labels),
                     Metric(name=f"inodes_free_{mount_key}", value=inodes_free, timestamp=timestamp, labels=labels),
+                    
+                    # Always add root-specific metrics for the root filesystem
+                    Metric(name=f"inodes_total_root" if mount == "/" else f"inodes_total_root_skip", value=inodes_total, timestamp=timestamp, labels=labels),
+                    Metric(name=f"inodes_used_root" if mount == "/" else f"inodes_used_root_skip", value=inodes_used, timestamp=timestamp, labels=labels),
+                    Metric(name=f"inodes_free_root" if mount == "/" else f"inodes_free_root_skip", value=inodes_free, timestamp=timestamp, labels=labels),
                 ])
                 
             except Exception as e:
@@ -187,6 +200,10 @@ def get_mount_points(config=None):
             if device.startswith("/dev/loop"):
                 continue
                 
+            # Skip Docker overlay mounts if configured to do so
+            if config.get('exclude_docker', True) and (mount_point.startswith("/var/lib/docker/overlay") or "docker" in device):
+                continue
+                
             # Debug logging removed for brevity
             mount_points.append(mount_point)
             
@@ -210,6 +227,10 @@ def get_mount_points(config=None):
                         
                     # Skip bind mounts and virtual devices
                     if device.startswith("/dev/loop") or device == "none":
+                        continue
+                        
+                    # Skip Docker overlay mounts if configured to do so
+                    if config.get('exclude_docker', True) and (mount_point.startswith("/var/lib/docker/overlay") or fstype == "overlay"):
                         continue
                         
                     # Debug logging removed for brevity

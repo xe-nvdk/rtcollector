@@ -13,6 +13,7 @@ inputs:
   - linux_disk:
       exclude_mounts: []
       include_mounts: []  # Leave empty to include all mount points
+      exclude_docker: true  # Set to false to include Docker overlay mounts
   - linux_io:
       exclude_devices: []
       include_devices: []  # Leave empty to include all devices

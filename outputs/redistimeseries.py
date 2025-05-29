@@ -1,13 +1,14 @@
 import redis
 import socket
+import time
 from core.metric import Metric
 from utils.debug import debug_log
 
 class Redistimeseries:
     supports_logs = False
     supports_metrics = True
-    def __init__(self, host="localhost", port=6379, db=0, retention="0", hostname=None, debug=False):
-        self.r = redis.Redis(host=host, port=port, db=db)
+    def __init__(self, host="localhost", port=6379, db=0, retention="0", hostname=None, debug=False, password=None):
+        self.r = redis.Redis(host=host, port=port, db=db, password=password)
         self.debug = debug
         self.config = {"debug": debug}  # Create a config dict for debug_log
         
@@ -36,6 +37,19 @@ class Redistimeseries:
     def _create_indexes(self):
         """Create indexes for common labels."""
         debug_log("Redistimeseries", "Creating indexes for common labels", self.config)
+        
+        # Create a special time series that stores all unique hosts
+        try:
+            # Create a special time series to track hosts
+            self.r.execute_command(
+                "TS.CREATE", "rtcollector:hosts:index", 
+                "RETENTION", str(self.retention),
+                "LABELS", "type", "host_index"
+            )
+            debug_log("Redistimeseries", "Created host index time series", self.config)
+        except redis.exceptions.ResponseError as e:
+            if "already exists" not in str(e):
+                debug_log("Redistimeseries", f"Could not create host index: {e}", self.config)
         
         # Create index for common labels using FT.CREATE if RediSearch is available
         try:
@@ -82,6 +96,8 @@ class Redistimeseries:
     
     def write(self, metrics):
         pipe = self.r.pipeline()
+        hosts_seen = set()
+        
         for m in metrics:
             key = m.name
             if key not in self.created_keys:
@@ -92,6 +108,9 @@ class Redistimeseries:
                     # Always set host label
                     if "host" not in labels:
                         labels["host"] = self.hostname
+                    
+                    # Track the host for our host index
+                    hosts_seen.add(labels["host"])
                     
                     # Format labels for TS.CREATE
                     label_args = []
@@ -131,5 +150,29 @@ class Redistimeseries:
 
         try:
             pipe.execute()
+            
+            # Update the host index with all hosts seen in this batch
+            timestamp = int(time.time() * 1000)
+            for host in hosts_seen:
+                try:
+                    # Store the host name in a special key
+                    host_key = f"rtcollector:hosts:{host}"
+                    if host_key not in self.created_keys:
+                        self.r.execute_command(
+                            "TS.CREATE", host_key,
+                            "RETENTION", str(self.retention),
+                            "DUPLICATE_POLICY", "LAST",
+                            "LABELS", "type", "host", "host", host
+                        )
+                        self.created_keys.add(host_key)
+                    
+                    # Add a data point to keep the time series active
+                    self.r.execute_command("TS.ADD", host_key, timestamp, 1)
+                    
+                    # Also add to the main host index
+                    self.r.execute_command("TS.ADD", "rtcollector:hosts:index", timestamp, len(hosts_seen))
+                except Exception as e:
+                    debug_log("Redistimeseries", f"Error updating host index: {e}", self.config)
+                    
         except redis.exceptions.ResponseError as e:
             print(f"[Collector] Error in output plugin: {e}")  # Keep this as regular print for errors

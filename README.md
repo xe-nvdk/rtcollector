@@ -110,6 +110,7 @@ Because most modern observability agents:
 | `netstat`     | ✅     | TCP connection states (established, time_wait, close_wait, etc.) for IPv4 and IPv6 |
 | `nstat`       | ✅     | Network statistics from /proc/net/snmp including IP, TCP, UDP, and ICMP error counters |
 | `linux_swap`   | ✅     | Swap usage and I/O metrics (total, free, used, in/out bytes) |
+| `internal`     | ✅     | Internal metrics about rtcollector itself (memory usage, metrics gathered/written, plugin performance) |
 
 ---
 
@@ -691,6 +692,50 @@ The System input plugin collects general system metrics:
 - **Users**: Number of logged-in users and unique users
 - **CPUs**: Number of CPU cores/processors
 - **Uptime**: System uptime in seconds
+
+### 📊 Internal Plugin
+
+The Internal input plugin collects metrics about rtcollector itself:
+
+- **Memory Stats**: Memory usage and garbage collection metrics
+- **Agent Stats**: Overall collector statistics (metrics gathered, written, dropped, errors)
+- **Gather Stats**: Per-plugin collection statistics (gather time, metrics gathered)
+- **Write Stats**: Per-plugin output statistics (write time, metrics written/dropped)
+
+Configuration options:
+- The plugin is automatically added to your inputs list when rtcollector starts
+- No additional configuration is needed
+
+Example metrics:
+- **Memory Stats**:
+  - `internal_memstats_sys_bytes`: Total memory used by the process
+  - `internal_memstats_heap_alloc_bytes`: Memory allocated on the heap
+  - `internal_memstats_num_gc`: Number of garbage collections performed
+
+- **Agent Stats**:
+  - `internal_agent_metrics_gathered`: Total number of metrics collected
+  - `internal_agent_metrics_written`: Total number of metrics written to outputs
+  - `internal_agent_metrics_dropped`: Total number of metrics dropped
+  - `internal_agent_gather_errors`: Total number of collection errors
+  - `internal_agent_metrics_gathered_rate`: Rate of metrics collected per second
+  - `internal_agent_metrics_written_rate`: Rate of metrics written per second
+  - `internal_agent_gather_errors_rate`: Rate of collection errors per second
+
+- **Gather Stats** (per input plugin):
+  - `internal_gather_gather_time_ns`: Time taken to collect metrics (nanoseconds)
+  - `internal_gather_metrics_gathered`: Number of metrics collected by this plugin
+  - `internal_gather_gather_time_ns_rate`: Rate of collection time per second
+
+- **Write Stats** (per output plugin):
+  - `internal_write_write_time_ns`: Time taken to write metrics (nanoseconds)
+  - `internal_write_metrics_written`: Number of metrics written by this plugin
+  - `internal_write_metrics_dropped`: Number of metrics dropped by this plugin
+  - `internal_write_buffer_size`: Current buffer size for this plugin
+  - `internal_write_buffer_limit`: Maximum buffer size for this plugin
+  - `internal_write_write_time_ns_rate`: Rate of write time per second
+  - `internal_write_metrics_written_rate`: Rate of metrics written per second
+
+These metrics are useful for monitoring the performance and health of rtcollector itself, similar to Telegraf's internal metrics.
 
 Configuration options:
 - Simply add the plugin to your config to enable it:

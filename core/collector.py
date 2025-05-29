@@ -54,11 +54,20 @@ class Collector:
                 start = time.time()
                 try:
                     # If input_handler is callable, call it to get data, else assume it's already data
+                    start_ns = time.time_ns()
                     if callable(input_handler):
                         data = input_handler()
                     else:
                         data = input_handler
                     duration = time.time() - start
+                    gather_time_ns = time.time_ns() - start_ns
+                    
+                    # Update internal stats if the internal module is imported
+                    try:
+                        from inputs.internal import update_gather_stats
+                        update_gather_stats(plugin_name, "gather_time_ns", gather_time_ns)
+                    except ImportError:
+                        pass
                     # Determine plugin keys for logs and metrics
                     plugin_logs_key = f"{plugin_name}_logs"
                     plugin_metrics_key = f"{plugin_name}_metrics"
@@ -70,6 +79,13 @@ class Collector:
                                     item.labels.update(self.tags)
                                     metrics_to_send.append(item)
                                     count += 1
+                                    # Update internal stats
+                                    try:
+                                        from inputs.internal import update_collector_stats
+                                        update_collector_stats("metrics_gathered")
+                                        update_gather_stats(plugin_name, "metrics_gathered", 1)
+                                    except ImportError:
+                                        pass
                         if plugin_logs_key in data:
                             for log in data[plugin_logs_key]:
                                 if isinstance(log, dict):
@@ -100,6 +116,13 @@ class Collector:
                     # Sample metrics are completely disabled unless in debug mode
                 except Exception as e:
                     print(f"[{datetime.now().isoformat()}] [Collector] Error in input plugin '{plugin_name}': {e}")
+                    # Update internal stats for errors
+                    try:
+                        from inputs.internal import update_collector_stats, update_gather_stats
+                        update_collector_stats("gather_errors")
+                        update_gather_stats(plugin_name, "gather_errors", 1)
+                    except ImportError:
+                        pass
 
             self.buffered_metrics.extend(metrics_to_send)
             print(f"[{datetime.now().isoformat()}] [Collector] Buffered {len(self.buffered_metrics)} metrics.")
@@ -117,7 +140,15 @@ class Collector:
                 if len(self.buffered_metrics) > self.max_buffer_size:
                     if self.warn_on_buffer:
                         print(f"[WARNING] Buffered metrics exceeded max buffer size ({self.max_buffer_size}). Dropping oldest entries.")
+                    dropped_count = len(self.buffered_metrics) - self.max_buffer_size
                     self.buffered_metrics = self.buffered_metrics[-self.max_buffer_size:]
+                    
+                    # Update internal stats for dropped metrics
+                    try:
+                        from inputs.internal import update_collector_stats
+                        update_collector_stats("metrics_dropped", dropped_count)
+                    except ImportError:
+                        pass
 
                 if len(self.buffered_logs) > self.max_buffer_size:
                     if self.warn_on_buffer:
@@ -138,8 +169,22 @@ class Collector:
                                         print(f"[{datetime.now().isoformat()}] [Collector] Failed to write logs to {output.__class__.__name__}: {e}")
                             elif hasattr(output, "supports_metrics") and output.supports_metrics:
                                 if self.buffered_metrics:
+                                    start_ns = time.time_ns()
                                     output.write(self.buffered_metrics)
+                                    write_time_ns = time.time_ns() - start_ns
                                     print(f"[{datetime.now().isoformat()}] [Collector] Wrote {len(self.buffered_metrics)} metrics to {output.__class__.__name__}")
+                                    
+                                    # Update internal stats
+                                    try:
+                                        from inputs.internal import update_collector_stats, update_write_stats
+                                        update_collector_stats("metrics_written", len(self.buffered_metrics))
+                                        output_name = output.__class__.__name__
+                                        update_write_stats(output_name, "metrics_written", len(self.buffered_metrics))
+                                        update_write_stats(output_name, "write_time_ns", write_time_ns)
+                                        update_write_stats(output_name, "buffer_size", len(self.buffered_metrics))
+                                        update_write_stats(output_name, "buffer_limit", self.max_buffer_size)
+                                    except ImportError:
+                                        pass
                             else:
                                 if self.buffered_metrics:
                                     output.write(self.buffered_metrics)

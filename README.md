@@ -359,6 +359,52 @@ rtcollector supports three authentication methods for Redis connections:
 
 These methods can be combined for enhanced security. All Redis-related components (inputs and outputs) support these authentication options.
 
+### 🔐 Secret Management
+
+rtcollector supports secure credential management through secret providers. This allows you to keep sensitive information like passwords out of your configuration files.
+
+#### Secret Reference Syntax
+
+In your config.yml, you can reference secrets using the `secret:` prefix:
+
+```yaml
+outputs:
+  - redistimeseries:
+      host: redis.example.com
+      port: 6379
+      password: "secret:redis/password"  # Reference to a secret
+```
+
+#### Secret Providers
+
+rtcollector supports multiple secret providers:
+
+1. **Environment Variables** (default)
+   ```yaml
+   secret_store:
+     type: env
+     prefix: SECRET_  # Optional, default is SECRET_
+   ```
+   
+   Secrets are stored in environment variables with the format `SECRET_REDIS_PASSWORD` (slashes in the secret ID are converted to underscores).
+
+2. **HashiCorp Vault**
+   ```yaml
+   secret_store:
+     type: vault
+     url: http://vault:8200        # Optional, defaults to VAULT_ADDR env var
+     path_prefix: rtcollector      # Optional, defaults to "rtcollector"
+   ```
+   
+   Vault authentication uses the `VAULT_TOKEN` environment variable by default. Secrets are stored in Vault's KV store at `rtcollector/redis/password`.
+
+#### Installation
+
+For Vault support, install the optional dependency:
+```
+pip install hvac
+```
+
 ### 🔧 Redis TimeSeries Configuration
 
 When using Redis with authentication via a custom configuration file, make sure to set the appropriate duplicate policy for TimeSeries:

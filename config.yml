@@ -1,11 +1,18 @@
 interval: 5
 flush_interval: 10
-max_buffer_size: 5000        # Maximum number of entries to buffer if Redis is unavailable
+max_buffer_size: 10000        # Maximum number of entries to buffer if Redis is unavailable
 warn_on_buffer: true
 hostname: ''
 
 debug: false
 once: false
+
+# Secret store configuration (optional)
+# secret_store:
+#   type: vault                   # Options: vault, env (default)
+#   url: http://vault:8200        # Vault server URL (default: VAULT_ADDR env var)
+#   path_prefix: rtcollector      # Path prefix for secrets in Vault
+#   # token is read from VAULT_TOKEN env var by default
 
 inputs:
   - linux_cpu

@@ -6,6 +6,7 @@ from datetime import datetime
 from core.collector import Collector
 from core.config import load_config
 from urllib.parse import urlparse
+from secrets import get_secret_provider
 
 def apply_proxy_settings(config):
     try:
@@ -39,6 +40,16 @@ def main():
     args = parser.parse_args()
     
     config = load_config(args.config)
+    
+    # Process secrets in configuration
+    if "secret_store" in config:
+        try:
+            secret_provider = get_secret_provider(config)
+            secret_provider.process_config(config)
+            if args.debug:
+                print("[DEBUG] Processed configuration with secret provider")
+        except Exception as e:
+            print(f"[WARNING] Error processing secrets: {e}")
     
     # Add internal plugin to inputs if not already present
     if "inputs" in config and "internal" not in config["inputs"]:
@@ -144,13 +155,12 @@ def main():
             "flush_interval": config.get("flush_interval"),
             "inputs": inputs,
             "outputs": outputs,
-            "tags": config.get("tags")
+            "tags": config.get("tags"),
+            "max_buffer_size": config.get("max_buffer_size", 5000)
         }
 
         if "warn_on_buffer" in config:
             collector_args["warn_on_buffer"] = config["warn_on_buffer"]
-        if "buffer_limit" in config:
-            collector_args["buffer_limit"] = config["buffer_limit"]
 
         collector = Collector(**collector_args)
         collector.output_types = output_types

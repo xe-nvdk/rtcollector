@@ -1,0 +1,48 @@
+interval: 10
+flush_interval: 60
+max_buffer_size: 5000
+warn_on_buffer: true
+hostname: ''
+debug: false
+once: false
+
+# Secret store configuration (optional)
+secret_store:
+  type: vault                   # Options: vault, env (default)
+  url: http://vault:8200        # Vault server URL (default: VAULT_ADDR env var)
+  path_prefix: rtcollector      # Path prefix for secrets in Vault
+  # token is read from VAULT_TOKEN env var by default
+
+inputs:
+  - linux_cpu
+  - linux_mem
+  - linux_disk:
+      exclude_mounts: []
+      include_mounts: []
+  - linux_net:
+      exclude_patterns:
+        - "veth"
+        - "docker"
+      include_interfaces:
+        - "eth0"
+  - system
+  - redis:
+      host: "127.0.0.1"
+      port: 6379
+      username: "redis_user"
+      password: "secret:redis/password"  # Reference to a secret in Vault or env var
+
+outputs:
+  - redistimeseries:
+      host: localhost
+      port: 6379
+      retention: 30d
+      username: "rtcollector"
+      password: "secret:redis/password"  # Same secret reference
+  - redissearch:
+      host: localhost
+      port: 6379
+      index: "logs_idx"
+      key_prefix: "log:"
+      username: "rtcollector"
+      password: "secret:redis/password"  # Same secret reference

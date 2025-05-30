@@ -101,8 +101,9 @@ def collect(config=None):
                     Metric(name=f"disk_used_percent_{mount_key}", value=used_percent, timestamp=timestamp, labels=labels),
                 ])
                 
-                # Debug output to help diagnose the issue
-                print(f"[linux_disk] Processing mount point: {mount}, mount_key: {mount_key}")
+                # Debug output to help diagnose the issue - only show when debug is enabled
+                if config.get("debug", False):
+                    debug_log("linux_disk", f"Processing mount point: {mount}, mount_key: {mount_key}", config)
                 
                 # We already added these metrics with mount_key above, so we don't need to add them again
                 # This section is now redundant and can be removed

@@ -7,6 +7,12 @@ hostname: ''
 debug: false
 once: false
 
+# Global tags applied to all metrics
+tags:
+  environment: "production"
+  datacenter: "dc1"
+  service: "rtcollector"
+
 # Secret store configuration (optional)
 # secret_store:
 #   type: vault                   # Options: vault, env (default)

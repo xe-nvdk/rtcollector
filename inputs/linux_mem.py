@@ -38,7 +38,7 @@ def collect(config=None):
         available_percent = (available / total) * 100 if total > 0 else 0
         
         # Common labels
-        labels = {"source": "linux_mem", "host": hostname}
+        labels = {"source": "linux_mem", "host": hostname, "metric_type": "memory", "unit": "bytes"}
         
         # Add memory metrics
         metrics.extend([
@@ -48,8 +48,8 @@ def collect(config=None):
             Metric(name="mem_available", value=available, timestamp=timestamp, labels=labels),
             Metric(name="mem_buffers", value=buffers, timestamp=timestamp, labels=labels),
             Metric(name="mem_cached", value=cached, timestamp=timestamp, labels=labels),
-            Metric(name="mem_used_percent", value=used_percent, timestamp=timestamp, labels=labels),
-            Metric(name="mem_available_percent", value=available_percent, timestamp=timestamp, labels=labels),
+            Metric(name="mem_used_percent", value=used_percent, timestamp=timestamp, labels={**labels, "unit": "percent"}),
+            Metric(name="mem_available_percent", value=available_percent, timestamp=timestamp, labels={**labels, "unit": "percent"}),
         ])
         
         # Swap metrics
@@ -64,7 +64,7 @@ def collect(config=None):
                 Metric(name="swap_total", value=swap_total, timestamp=timestamp, labels=labels),
                 Metric(name="swap_used", value=swap_used, timestamp=timestamp, labels=labels),
                 Metric(name="swap_free", value=swap_free, timestamp=timestamp, labels=labels),
-                Metric(name="swap_percent", value=swap_percent, timestamp=timestamp, labels=labels),
+                Metric(name="swap_percent", value=swap_percent, timestamp=timestamp, labels={**labels, "unit": "percent"}),
             ])
         
     except Exception as e:

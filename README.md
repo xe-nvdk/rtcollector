@@ -319,6 +319,34 @@ See the [utils/README.md](utils/README.md) for more details on available utiliti
 
 ## 🧰 Configuration Notes
 
+### 🏷️ Custom Labels
+
+You can add global labels to all metrics by using the `tags` section in your configuration file:
+
+```yaml
+# Global tags applied to all metrics
+tags:
+  environment: "production"
+  datacenter: "us-east-1"
+  service: "web-app"
+  team: "platform"
+```
+
+These labels will be automatically applied to all metrics collected by rtcollector, making it easy to:
+- Filter metrics by environment, datacenter, team, or service
+- Create dashboards that work across different environments
+- Set up alerts that are specific to certain environments or services
+
+Individual input plugins can also add their own labels. For example, the `linux_cpu` plugin adds:
+- `source`: The name of the input plugin
+- `core`: The CPU core identifier
+- `host`: The hostname of the machine
+
+You can see all labels for a metric using the Redis CLI:
+```
+TS.INFO metric_name
+```
+
 ### 🔑 Authentication Parameters
 
 - All input plugins requiring authentication (like `mariadb`, `redis`, `postgres`) now use direct authentication parameters at the root level of their configuration.

@@ -46,7 +46,7 @@ def collect(config=None):
                     name=metric_name,
                     value=v,
                     timestamp=timestamp,
-                    labels={"source": "linux_cpu", "core": core_label, "host": hostname}
+                    labels={"source": "linux_cpu", "core": core_label, "host": hostname, "metric_type": "cpu", "unit": "percent"}
                 ))
                 # Only log detailed metrics in debug mode
         

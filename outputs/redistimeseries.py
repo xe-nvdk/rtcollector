@@ -132,6 +132,13 @@ class Redistimeseries:
         pipe = self.r.pipeline()
         hosts_seen = set()
         
+        # Reset created_keys to force checking labels on existing time series
+        # This is a one-time operation that will happen only on startup
+        if not hasattr(self, '_labels_verified'):
+            self.created_keys = set()
+            self._labels_verified = True
+            print("[Redistimeseries] Verifying labels on existing time series")
+        
         for m in metrics:
             key = m.name
             if key not in self.created_keys:
@@ -151,14 +158,50 @@ class Redistimeseries:
                     for k, v in labels.items():
                         label_args.extend([k, str(v)])
                     
-                    # Create the time series with labels
-                    debug_log("Redistimeseries", f"Creating key {key} with labels: {labels}", self.config)
-                    self.r.execute_command(
-                        "TS.CREATE", key,
-                        "RETENTION", str(self.retention),
-                        "DUPLICATE_POLICY", "LAST",
-                        "LABELS", *label_args
-                    )
+                    # Check if key exists first
+                    try:
+                        info = self.r.execute_command("TS.INFO", key)
+                        # Key exists, check if it has labels
+                        has_labels = False
+                        for i, item in enumerate(info):
+                            if item == b"labels" and i+1 < len(info) and isinstance(info[i+1], list) and len(info[i+1]) > 0:
+                                has_labels = True
+                                break
+                        
+                        if not has_labels:
+                            # Key exists but has no labels, we need to recreate it
+                            # First, get all the data
+                            try:
+                                data = self.r.execute_command("TS.RANGE", key, "-", "+")
+                                # Delete and recreate with labels
+                                self.r.delete(key)
+                                print(f"[Redistimeseries] Recreating key {key} with labels: {labels}")
+                                self.r.execute_command(
+                                    "TS.CREATE", key,
+                                    "RETENTION", str(self.retention),
+                                    "DUPLICATE_POLICY", "LAST",
+                                    "LABELS", *label_args
+                                )
+                                # Restore data
+                                if data:
+                                    restore_pipe = self.r.pipeline()
+                                    for ts, val in data:
+                                        restore_pipe.execute_command("TS.ADD", key, ts, val)
+                                    restore_pipe.execute()
+                                    print(f"[Redistimeseries] Restored {len(data)} data points for {key}")
+                            except Exception as e:
+                                debug_log("Redistimeseries", f"Error migrating data for {key}: {e}", self.config)
+                        else:
+                            debug_log("Redistimeseries", f"Key {key} already exists with labels", self.config)
+                    except redis.exceptions.ResponseError:
+                        # Key doesn't exist, create it with labels
+                        print(f"[Redistimeseries] Creating new key {key} with labels: {labels}")
+                        self.r.execute_command(
+                            "TS.CREATE", key,
+                            "RETENTION", str(self.retention),
+                            "DUPLICATE_POLICY", "LAST",
+                            "LABELS", *label_args
+                        )
                     
                     # Explicitly create an index for this key's labels
                     for label_key, label_value in labels.items():
@@ -175,7 +218,7 @@ class Redistimeseries:
                 self.created_keys.add(key)
 
             try:
-                # Always use ON_DUPLICATE LAST to handle duplicate policy issues
+                # Add data point with timestamp and value (no labels needed here as they're set at creation)
                 pipe.execute_command("TS.ADD", key, int(m.timestamp), float(m.value), "ON_DUPLICATE", "LAST")
             except redis.exceptions.ResponseError as e:
                 if "DUPLICATE_POLICY" in str(e) or "at upsert" in str(e):
